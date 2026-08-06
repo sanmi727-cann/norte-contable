@@ -20,6 +20,7 @@
   cada firma ve solo lo suyo (RLS), sincronización en vivo entre
   computadoras, logo por firma. El modo demo sigue disponible con
   ?demo en la URL (o abriendo el archivo local); ver supabase/schema.sql
+  · vencimientos que caen sábado o domingo se corren al lunes
 ────────────────────────────────────────────────────────────────────
   INVESTIGACIÓN DE MERCADO (2026):
   · TaxDome  $58–100/usuario/mes · #1 en G2, pero un mes para configurar
@@ -606,7 +607,17 @@ function aplicaA(cli,obl){
   }
 }
 function ultimoDiaMes(y,m){ return new Date(y,m,0).getDate(); }
-function fechaVence(obl,periodo,cli){
+/* Si el vencimiento cae sábado o domingo, corre al lunes siguiente
+   (regla general de Hacienda e IRS para pagos y radicaciones). */
+function rodarFinDeSemana(iso){
+  const d=parseISO(iso), dow=d.getDay();
+  if(dow===6) d.setDate(d.getDate()+2);
+  else if(dow===0) d.setDate(d.getDate()+1);
+  else return iso;
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function fechaVence(obl,periodo,cli){ return rodarFinDeSemana(fechaVenceBase(obl,periodo,cli)); }
+function fechaVenceBase(obl,periodo,cli){
   /* periodo: 'YYYY-MM' para mensual, 'YYYY-Tn' trimestral, 'YYYY' anual */
   const dia=obl.dia||15;
   if(obl.frec==='mensual'){
