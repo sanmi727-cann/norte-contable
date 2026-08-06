@@ -1000,7 +1000,8 @@ function avisosFirma(){
 
 /* ══════════ HOY ══════════ */
 function renderHoy(){
-  const venc=radsVencidas(), prox=proximosVencimientos(state.config.avisoDias);
+  /* "próximas" = de hoy en adelante; las atrasadas van en su propio contador */
+  const venc=radsVencidas(), prox=radsProximas();
   const bloq=bloqueadasPorDocs();
   const mes30=proximosVencimientos(30);
   let h='';
