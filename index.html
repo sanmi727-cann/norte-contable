@@ -26,7 +26,9 @@
   · servicios de firma en el perfil: estados de banco (día 5),
     QuickBooks (fin de mes), depósito de nómina (día 15) y trimestral
     del 10%; el 480.9A pasa del día 10 al 15 · filtro de clientes por
-    servicio en la pestaña Clientes
+    servicio en la pestaña Clientes · tributación de la LLC: corporación
+    regular (480.2) por defecto o entidad conducto (480.2 EC) según la
+    elección hecha al crearse — SC 6045
 ────────────────────────────────────────────────────────────────────
   INVESTIGACIÓN DE MERCADO (2026):
   · TaxDome  $58–100/usuario/mes · #1 en G2, pero un mes para configurar
@@ -424,6 +426,7 @@ function migrar(){
   state.clientes.forEach(cl=>{
     const p=cl.perfil||{};
     if(p.banco===undefined){ p.banco=false; p.quickbooks=false; p.nomina=false; dirty=true; }
+    if(cl.tributacion===undefined){ cl.tributacion='corp'; dirty=true; }
   });
   state.radicaciones.forEach(r=>{
     if(r.preparadoPor===undefined){ r.preparadoPor=''; r.revisadoPor=''; r.montoPago=null; r.pagoPend=false; dirty=true; }
@@ -628,8 +631,10 @@ function aplicaA(cli,obl){
     case 'noretenedor': return !!p.noretenedor;
     case 'estimada': return !!p.estimada;
     case 'individuo': return cli.tipo==='Individuo'||cli.tipo==='Individuo con negocio';
-    case 'corporacion': return cli.tipo==='Corporación'||cli.tipo==='LLC';
-    case 'conducto': return cli.tipo==='Entidad conducto';
+    /* una LLC tributa como corporación POR DEFECTO en PR, salvo elección
+       de conducto hecha al crearse (cli.tributacion==='conducto') */
+    case 'corporacion': return cli.tipo==='Corporación'||(cli.tipo==='LLC'&&cli.tributacion!=='conducto');
+    case 'conducto': return cli.tipo==='Entidad conducto'||(cli.tipo==='LLC'&&cli.tributacion==='conducto');
     case 'informativas': return !!p.retiene||!!p.patrono;
     case 'patente': return !!p.patente;
     case 'propiedad': return !!p.propiedad;
@@ -1314,7 +1319,7 @@ function renderClientes(){
     const docs=docsDe(c.id).filter(p=>!p.recibido).length;
     h+='<tr class="click" onclick="verCli(\''+c.id+'\')">'
       +'<td><b>'+esc(c.nombre)+'</b>'+(c.estado!=='activo'?' <span class="badge b-gray">inactivo</span>':'')+'<br><span class="tiny">'+esc(c.contacto||'')+' · '+esc(c.ein||'')+'</span></td>'
-      +'<td>'+esc(c.tipo)+(c.cierre!=='12'?'<br><span class="tiny">cierre '+MESES_ABR[Number(c.cierre)-1]+'</span>':'')+'</td>'
+      +'<td>'+esc(c.tipo)+(c.tipo==='LLC'&&c.tributacion==='conducto'?'<br><span class="tiny">tributa como conducto</span>':'')+(c.cierre!=='12'?'<br><span class="tiny">cierre '+MESES_ABR[Number(c.cierre)-1]+'</span>':'')+'</td>'
       +'<td class="tiny">'+etiquetasPerfil(c).join(' · ')+'</td>'
       +'<td class="num money">'+money(c.honorario)+'</td>'
       +'<td>'+(venc?'<span class="badge b-coral">'+venc+' vencida(s)</span> ':'')
@@ -1351,7 +1356,7 @@ function renderFichaCli(id){
   h+='<div class="row" style="margin-bottom:10px"><span class="link" onclick="cliId=null;renderAll()">← Clientes</span></div>';
   h+='<div class="row" style="justify-content:space-between;align-items:flex-start">'
     +'<div><h2 style="font-size:22px;font-weight:800;margin:0">'+esc(c.nombre)+'</h2>'
-    +'<div class="muted">'+esc(c.tipo)+' · EIN/SS '+esc(c.ein||'—')+' · '+esc(c.contacto||'')+' '+esc(c.tel||'')
+    +'<div class="muted">'+esc(c.tipo)+(c.tipo==='LLC'?(c.tributacion==='conducto'?' (tributa como conducto)':' (tributa como corporación)'):'')+' · EIN/SS '+esc(c.ein||'—')+' · '+esc(c.contacto||'')+' '+esc(c.tel||'')
     +(c.cierre!=='12'?' · <b>cierre fiscal '+MESES_FULL[Number(c.cierre)-1]+'</b>':'')+'</div>'
     +'<div class="tiny" style="margin-top:4px">'+etiquetasPerfil(c).join(' · ')+'</div>'
     +(c.notas?'<div class="tiny" style="margin-top:4px">📝 '+esc(c.notas)+'</div>':'')+'</div>'
@@ -1443,7 +1448,11 @@ function modalCli(id){
     +'<div class="fld"><label>Nombre / razón social</label><input id="cl_nom" value="'+(c?esc(c.nombre):'')+'"></div>'
     +'<div class="fld"><label>EIN o Seguro Social</label><input id="cl_ein" value="'+(c?esc(c.ein):'')+'"></div></div>'
     +'<div class="frow3">'
-    +'<div class="fld"><label>Tipo de entidad</label><select id="cl_tipo">'+optsT+'</select></div>'
+    +'<div class="fld"><label>Tipo de entidad</label><select id="cl_tipo" onchange="var w=$id(\'trib_wrap\');if(w)w.style.display=this.value===\'LLC\'?\'\':\'none\'">'+optsT+'</select>'
+    +'<div id="trib_wrap" style="display:'+(c&&c.tipo==='LLC'?'':'none')+';margin-top:8px"><label style="font-size:11px">Tributación de la LLC</label>'
+    +'<select id="cl_trib"><option value="corp"'+(!c||c.tributacion!=='conducto'?' selected':'')+'>Corporación regular (480.2)</option>'
+    +'<option value="conducto"'+(c&&c.tributacion==='conducto'?' selected':'')+'>Entidad conducto (480.2 EC)</option></select>'
+    +'<div class="note">En PR la LLC tributa como corporación por defecto, salvo que haya elegido conducto al crearse. Verifica la elección del cliente.</div></div></div>'
     +'<div class="fld"><label>Mes de cierre fiscal</label><select id="cl_cierre">'+optsM+'</select><div class="note">Determina el vencimiento de la planilla anual.</div></div>'
     +'<div class="fld"><label>Honorario mensual</label><input type="number" id="cl_hon" step="0.01" value="'+(c?c.honorario:'')+'"></div>'
     +'</div><div class="frow3">'
@@ -1476,9 +1485,18 @@ function guardarCli(id){
   const perfil={};
   ['ivu','retiene','importa','arbitrios','patrono','noretenedor','estimada','patente','propiedad','banco','quickbooks','nomina'].forEach(k=>{ perfil[k]=$id('cp_'+k).checked; });
   const datos={nombre,ein:$id('cl_ein').value.trim(),tipo:$id('cl_tipo').value,cierre:$id('cl_cierre').value,
+    tributacion:$id('cl_trib')?$id('cl_trib').value:'corp',
     honorario:Number($id('cl_hon').value)||0,contacto:$id('cl_cont').value.trim(),tel:$id('cl_tel').value.trim(),
     email:$id('cl_email').value.trim(),perfil,estado:$id('cl_estado').value,notas:$id('cl_notas').value.trim()};
-  if(id){ Object.assign(getCli(id),datos); toast('Cliente actualizado — regenera el período si cambiaste el perfil'); }
+  if(id){
+    Object.assign(getCli(id),datos);
+    /* si la LLC cambió de elección, la planilla del tipo que ya no aplica se marca N/A */
+    if(datos.tipo==='LLC'){
+      const fuera= datos.tributacion==='conducto' ? 'planilla_corp' : 'planilla_ec';
+      state.radicaciones.forEach(r=>{ if(r.cliId===id&&r.oblId===fuera&&r.estado!=='radicado') r.estado='na'; });
+    }
+    toast('Cliente actualizado — regenera el período si cambiaste el perfil');
+  }
   else{ const n=Object.assign({id:uid('c')},datos); state.clientes.push(n); cliId=n.id; currentTab='clientes';
         const g=generarPeriodo(tabMes); toast('Cliente creado — '+g+' radicación(es) generadas según su perfil'); }
   saveState(); closeModal(); renderAll();
