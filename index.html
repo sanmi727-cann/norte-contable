@@ -16,6 +16,10 @@
   v1.2: pestaña TAREAS — cola de trabajo por persona (al completar,
   desaparece de la vista) · flujo de planilla en 5 etapas con fechas
   escalonadas antes del vencimiento · tareas del día en Hoy
+  v1.3: NUBE multi-tenant (Supabase) — login por email/contraseña,
+  cada firma ve solo lo suyo (RLS), sincronización en vivo entre
+  computadoras, logo por firma. El modo demo sigue disponible con
+  ?demo en la URL (o abriendo el archivo local); ver supabase/schema.sql
 ────────────────────────────────────────────────────────────────────
   INVESTIGACIÓN DE MERCADO (2026):
   · TaxDome  $58–100/usuario/mes · #1 en G2, pero un mes para configurar
@@ -42,7 +46,10 @@
   el trabajo; NO constituye asesoría contributiva ni sustituye el juicio
   profesional.
 
-  SCHEMA SUPABASE (referencia)
+  SCHEMA SUPABASE — el vigente está en supabase/schema.sql: tablas
+  firmas (data jsonb con todo el estado de la firma) y miembros
+  (email → firma + rol), con RLS por email. El detalle de abajo es la
+  referencia para cuando se normalice a tablas separadas:
   create table firmas (id uuid pk, nombre text, config jsonb);
   create table clientes (id uuid pk, firma_id uuid fk, nombre text, tipo text, ein text, contacto text, tel text, email text, perfil jsonb, honorario numeric, estado text);
   create table obligaciones (id uuid pk, codigo text, nombre text, forma text, frecuencia text, dia int, base text, aplica jsonb);
@@ -89,6 +96,9 @@ input,select,textarea{font-family:inherit;font-size:15px;color:var(--ink)}
 .login-box label{display:block;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;font-weight:600}
 #pinInput{width:100%;text-align:center;font-size:30px;letter-spacing:.5em;padding:12px 8px 12px 16px;border:2px solid var(--line-d);border-radius:var(--r);font-weight:700}
 #pinInput:focus{border-color:var(--navy-m);outline:none}
+#loginNube input{width:100%;padding:12px 14px;border:2px solid var(--line-d);border-radius:var(--r);font-size:16px;margin-bottom:10px}
+#loginNube input:focus{border-color:var(--navy-m);outline:none}
+#loginNube .btn{width:100%;justify-content:center;padding:12px;font-size:16px}
 .pinpad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
 .pinpad button{padding:14px 0;font-size:20px;font-weight:600;background:var(--navy-xl);border-radius:var(--r);transition:background .12s}
 .pinpad button:hover{background:var(--navy-l)}
@@ -288,7 +298,15 @@ svg.chart{width:100%;height:150px;display:block}
       <div class="sub">Calendario contributivo, radicaciones y facturación</div>
       <svg class="brand-roof" viewBox="0 0 110 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 13 L14 3 M14 13 L26 13 M36 3 L36 13 M32 3 L44 3 M56 13 Q56 3 64 3 Q72 3 72 13 M84 13 L84 3 M84 3 L94 13 M94 13 L94 3" stroke="#8FBF9F" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
     </div>
-    <div class="login-box">
+    <div class="login-box" id="loginNube" style="display:none">
+      <label for="emailInput">Entrar a tu firma</label>
+      <input id="emailInput" type="email" autocomplete="email" placeholder="correo@tufirma.com">
+      <input id="passInput" type="password" autocomplete="current-password" placeholder="Contraseña">
+      <button class="btn" onclick="loginNube()">Entrar</button>
+      <div class="login-err" id="loginErrNube"></div>
+      <div class="login-hint">Acceso para firmas suscritas a Norte Contable.<br>¿Quieres verlo por dentro? <a class="link" href="?demo" style="color:var(--navy-m)">Abrir la demo</a></div>
+    </div>
+    <div class="login-box" id="loginDemo">
       <label for="pinInput">PIN de acceso</label>
       <input id="pinInput" type="password" inputmode="numeric" maxlength="4" autocomplete="off">
       <div class="pinpad">
@@ -329,8 +347,21 @@ svg.chart{width:100%;height:150px;display:block}
 <div id="toast"></div>
 <div id="printArea"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 'use strict';
+
+/* ══════════ NUBE (SUPABASE) — multi-tenant ══════════
+   Modo demo: ?demo en la URL, o abrir el archivo local (file://).
+   Modo nube: el site publicado sin ?demo. Cada firma ve solo lo suyo
+   (RLS por email en supabase/schema.sql); el estado completo de la
+   firma viaja como un JSON en firmas.data. */
+const SUPA_URL='https://rysecnkzdabypdltlrtw.supabase.co';
+const SUPA_KEY='sb_publishable_Df4f1w8LDtx21VGYtJHYbg_DA9pFWpD';
+const _qs=new URLSearchParams(location.search);
+const DEMO=_qs.has('demo')||(location.protocol==='file:'&&!_qs.has('nube'));
+const sb=(!DEMO&&window.supabase)?window.supabase.createClient(SUPA_URL,SUPA_KEY):null;
+const nube={firmaId:null,rol:null,quien:'',canal:null,saveTimer:null,ultimoGuardado:0};
 
 /* ══════════ CONSTANTES ══════════ */
 const TIPOS_CLIENTE=['Individuo','Individuo con negocio','Corporación','LLC','Entidad conducto','Sin fines de lucro'];
@@ -343,10 +374,26 @@ const DOCS_COMUNES=['Estados de banco','Facturas de gastos','Nómina del períod
 /* ══════════ STORAGE / UTILS ══════════ */
 const STORE_KEY='norteContable_v1';
 let memStore=null;
-function storageGet(){ try{ return localStorage.getItem(STORE_KEY); }catch(e){ return memStore; } }
-function storageSet(v){ try{ localStorage.setItem(STORE_KEY,v); }catch(e){ memStore=v; } }
+function storeKey(){ return nube.firmaId?'norteContable_'+nube.firmaId:STORE_KEY; }
+function storageGet(){ try{ return localStorage.getItem(storeKey()); }catch(e){ return memStore; } }
+function storageSet(v){ try{ localStorage.setItem(storeKey(),v); }catch(e){ memStore=v; } }
 let state=null;
-function saveState(){ storageSet(JSON.stringify(state)); }
+function saveState(){
+  storageSet(JSON.stringify(state));
+  if(sb&&nube.firmaId){
+    clearTimeout(nube.saveTimer);
+    nube.saveTimer=setTimeout(subirNube,800);
+  }
+}
+async function subirNube(){
+  nube.ultimoGuardado=Date.now();
+  try{
+    const {error}=await sb.from('firmas').update({data:state,updated_at:new Date().toISOString()}).eq('id',nube.firmaId);
+    if(error) throw error;
+  }catch(e){
+    toast('⚠️ No se pudo guardar en la nube — revisa tu internet',true);
+  }
+}
 function loadState(){
   const raw=storageGet();
   if(raw){ try{ state=JSON.parse(raw); if(state&&state.clientes){ migrar(); return; } }catch(e){} }
@@ -360,10 +407,81 @@ function migrar(){
   if(!state.bitacora){ state.bitacora=[]; dirty=true; }
   if(!state.tareas){ state.tareas=[]; dirty=true; }
   if(c.firma.licVence===undefined){ c.firma.licVence=''; c.firma.educVence=''; dirty=true; }
+  if(c.firma.logo===undefined){ c.firma.logo=''; dirty=true; }
   state.radicaciones.forEach(r=>{
     if(r.preparadoPor===undefined){ r.preparadoPor=''; r.revisadoPor=''; r.montoPago=null; r.pagoPend=false; dirty=true; }
   });
   if(dirty) saveState();
+}
+
+/* ══════════ ENTRADA A LA NUBE ══════════ */
+function estadoVacio(nombreFirma){
+  /* estado inicial de una firma real: catálogo listo, datos en cero */
+  return {
+    config:{
+      firma:{nombre:nombreFirma||'Mi firma',lic:'',dir:'',tel:'',email:'',licVence:'',educVence:'',logo:''},
+      pins:{admin:'1234',staff:'0000'},
+      avisoDias:10, ivu:{activo:true,pct:4}, retencionPct:10, tarifaHora:85, proxFactura:1001,
+      staff:['Socio'],
+      obligaciones:catalogoObligaciones(),
+      plantillasDocs:plantillasDefault(),
+    },
+    clientes:[], radicaciones:[], pendientes:[], tiempo:[], facturas:[], bitacora:[], tareas:[],
+  };
+}
+function mostrarLoginNube(msg){
+  $id('loginScreen').style.display='flex'; $id('app').style.display='none';
+  $id('loginDemo').style.display='none'; $id('loginNube').style.display='block';
+  if(msg) $id('loginErrNube').textContent=msg;
+  setTimeout(()=>{ const i=$id('emailInput'); if(i&&i.focus) i.focus(); },150);
+}
+async function entrarNube(){
+  try{
+    const {data:{session:ses}}=await sb.auth.getSession();
+    if(!ses){ mostrarLoginNube(); return; }
+    await cargarFirma(ses);
+  }catch(e){ mostrarLoginNube('No se pudo conectar. Revisa tu internet y recarga.'); }
+}
+async function loginNube(){
+  const email=$id('emailInput').value.trim(), pass=$id('passInput').value;
+  if(!email||!pass){ $id('loginErrNube').textContent='Escribe tu correo y contraseña'; return; }
+  $id('loginErrNube').textContent='Entrando…';
+  const {data,error}=await sb.auth.signInWithPassword({email,password:pass});
+  if(error){ $id('loginErrNube').textContent='Correo o contraseña incorrectos'; return; }
+  $id('loginErrNube').textContent='';
+  await cargarFirma(data.session);
+}
+async function cargarFirma(ses){
+  const email=ses.user.email;
+  const {data:m,error:e1}=await sb.from('miembros').select('*').eq('email',email).maybeSingle();
+  if(e1||!m){ await sb.auth.signOut(); mostrarLoginNube('Esa cuenta no está asignada a ninguna firma. Contacta a Norte.'); return; }
+  const {data:f,error:e2}=await sb.from('firmas').select('*').eq('id',m.firma_id).single();
+  if(e2||!f){ mostrarLoginNube('No se pudo cargar la información de la firma.'); return; }
+  nube.firmaId=f.id; nube.rol=m.rol; nube.quien=m.nombre||email.split('@')[0];
+  state=f.data||estadoVacio(f.nombre);
+  migrar();
+  if(!f.data) await subirNube();      /* primera vez: siembra el estado inicial */
+  storageSet(JSON.stringify(state));  /* copia local de respaldo */
+  session.role= m.rol==='socio'?'admin':'staff';
+  $id('loginScreen').style.display='none'; $id('app').style.display='block';
+  $id('topWho').textContent=nube.quien+' · '+(isAdmin()?'Socio':'Staff');
+  document.querySelectorAll('#mainTabs button').forEach(b=>{ b.style.display=(isAdmin()||!b.dataset.admin)?'':'none'; });
+  generarPeriodo(mesISO());
+  setTab('hoy');
+  suscribirNube();
+}
+function suscribirNube(){
+  if(nube.canal||!sb) return;
+  nube.canal=sb.channel('firma-'+nube.firmaId)
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'firmas',filter:'id=eq.'+nube.firmaId},p=>{
+      if(Date.now()-nube.ultimoGuardado<3000) return;   /* eco de nuestro propio guardado */
+      if(p.new&&p.new.data){
+        state=p.new.data;
+        storageSet(JSON.stringify(state));
+        renderAll();
+        toast('Datos actualizados por otro miembro de la firma');
+      }
+    }).subscribe();
 }
 const $id=id=>document.getElementById(id);
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -778,7 +896,10 @@ function tryLogin(){
   document.querySelectorAll('#mainTabs button').forEach(b=>{ b.style.display=(isAdmin()||!b.dataset.admin)?'':'none'; });
   setTab('hoy');
 }
-function logout(){ session.role=null; $id('app').style.display='none'; $id('loginScreen').style.display='flex'; setTimeout(()=>$id('pinInput').focus(),100); }
+function logout(){
+  if(sb){ sb.auth.signOut().finally(()=>location.reload()); return; }
+  session.role=null; $id('app').style.display='none'; $id('loginScreen').style.display='flex'; setTimeout(()=>$id('pinInput').focus(),100);
+}
 function setTab(t){
   if(!isAdmin()&&['facturacion','config'].includes(t)) t='hoy';
   currentTab=t;
@@ -801,7 +922,7 @@ function renderAll(){
   }
 }
 function refreshTop(){
-  $id('topClin').textContent=state.config.firma.nombre;
+  $id('topClin').innerHTML=(state.config.firma.logo?'<img src="'+state.config.firma.logo+'" alt="" style="height:32px;vertical-align:middle;margin-right:8px;background:#fff;border-radius:5px;padding:1px">':'')+esc(state.config.firma.nombre);
   const d=new Date();
   const dias=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
   $id('topDate').innerHTML='<b>'+dias[d.getDay()]+'</b><br>'+fmtF(hoyISO());
@@ -1801,6 +1922,11 @@ function renderConfig(){
     +'<div class="frow"><div class="fld"><label>Vence licencia / registro</label><input type="date" id="cf_licv" value="'+esc(c.firma.licVence||'')+'"></div>'
     +'<div class="fld"><label>Límite educación continua</label><input type="date" id="cf_educv" value="'+esc(c.firma.educVence||'')+'"></div></div>'
     +'<p class="tiny">La pestaña Hoy te avisa 60 días antes de estas fechas. El registro del especialista y las horas de educación continua también vencen — y a ti nadie te lo recuerda.</p>'
+    +'<div class="fld"><label>Logo de la firma</label>'
+    +(c.firma.logo?'<img src="'+c.firma.logo+'" alt="logo" style="height:46px;display:block;margin-bottom:8px;background:#fff;border-radius:6px;padding:2px">':'')
+    +'<div class="row"><label class="btn sm ghost" style="cursor:pointer">⬆️ Subir logo<input type="file" accept="image/*" style="display:none" onchange="subirLogo(this)"></label>'
+    +(c.firma.logo?'<button class="btn sm ghost" style="color:var(--coral)" onclick="quitarLogo()">Quitar</button>':'')
+    +'</div><div class="note">Se muestra en la barra de arriba y en los documentos impresos. PNG o JPG.</div></div>'
     +'<button class="btn sm" onclick="guardarConfigFirma()">Guardar</button></div>';
   h+='<div class="card"><h2>Catálogo de obligaciones</h2>'
     +'<p class="tiny" style="margin-bottom:10px">Estas son las obligaciones que el sistema genera automáticamente según el perfil de cada cliente. Ajusta los días de vencimiento a la realidad vigente y añade lo que tu práctica maneje.</p>'
@@ -1822,11 +1948,14 @@ function renderConfig(){
   h+='<div class="card"><h2>Respaldo</h2><div class="row">'
     +'<button class="btn sm sec" onclick="exportarJSON()">⬇️ Exportar todo</button>'
     +'<label class="btn sm ghost" style="cursor:pointer">⬆️ Importar<input type="file" accept=".json" style="display:none" onchange="importarJSON(this)"></label>'
-    +'<button class="btn sm warn" onclick="resetDemo()">Restaurar demo</button></div>'
-    +'<div class="frow" style="margin-top:12px"><div class="fld"><label>PIN Socio</label><input id="cf_pinA" maxlength="4" value="'+esc(c.pins.admin)+'"></div>'
-    +'<div class="fld"><label>PIN Staff</label><input id="cf_pinS" maxlength="4" value="'+esc(c.pins.staff)+'"></div></div>'
-    +'<button class="btn sm" onclick="guardarPins()">Guardar PINs</button>'
-    +'<p class="tiny" style="margin-top:10px">El rol Staff ve clientes, tablero, documentos y tiempo — sin acceso a facturación ni configuración. Exporta con regularidad: ese archivo es tu práctica completa.</p></div>';
+    +(sb?'':'<button class="btn sm warn" onclick="resetDemo()">Restaurar demo</button>')+'</div>'
+    +(sb
+      ?'<p class="tiny" style="margin-top:10px">Tus datos viven en la nube de Norte Contable y se sincronizan solos entre computadoras. Las cuentas y contraseñas del equipo las maneja Norte — para añadir o quitar a alguien, contáctanos. Aun así, exporta de vez en cuando: ese archivo es tu copia personal.</p>'
+      :'<div class="frow" style="margin-top:12px"><div class="fld"><label>PIN Socio</label><input id="cf_pinA" maxlength="4" value="'+esc(c.pins.admin)+'"></div>'
+       +'<div class="fld"><label>PIN Staff</label><input id="cf_pinS" maxlength="4" value="'+esc(c.pins.staff)+'"></div></div>'
+       +'<button class="btn sm" onclick="guardarPins()">Guardar PINs</button>'
+       +'<p class="tiny" style="margin-top:10px">El rol Staff ve clientes, tablero, documentos y tiempo — sin acceso a facturación ni configuración. Exporta con regularidad: ese archivo es tu práctica completa.</p>')
+    +'</div>';
   h+='</div>';
   return h;
 }
@@ -1865,6 +1994,23 @@ function guardarPlantillas(){
   state.config.plantillasDocs=pl;
   saveState(); toast('Plantillas guardadas');
 }
+function subirLogo(inp){
+  const f=inp.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{
+      const h=80, w=Math.max(1,Math.round(img.width*h/img.height));
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      state.config.firma.logo=cv.toDataURL('image/png');
+      saveState(); renderAll(); toast('Logo guardado');
+    };
+    img.src=r.result;
+  };
+  r.readAsDataURL(f);
+}
+function quitarLogo(){ state.config.firma.logo=''; saveState(); renderAll(); toast('Logo eliminado'); }
 function guardarPins(){
   const a=$id('cf_pinA').value.trim(), s=$id('cf_pinS').value.trim();
   if(a.length!==4||s.length!==4){ toast('Los PINs deben tener 4 dígitos', true); return; }
@@ -1894,7 +2040,9 @@ function doPrint(html){
 }
 function prHead(sub){
   const f=state.config.firma;
-  return '<div class="ph"><div><div class="b">NORTE<span>CONTABLE</span></div><div style="font-size:12px;margin-top:2px">'+esc(f.nombre)+'</div></div>'
+  return '<div class="ph"><div>'
+    +(f.logo?'<img src="'+f.logo+'" alt="" style="height:42px;display:block;margin-bottom:4px">':'<div class="b">NORTE<span>CONTABLE</span></div>')
+    +'<div style="font-size:12px;margin-top:2px">'+esc(f.nombre)+'</div></div>'
     +'<div class="cd">'+esc(f.dir)+'<br>'+esc(f.tel)+'<br>'+esc(sub||'')+'</div></div>';
 }
 const FINE_LEY='Documento interno de trabajo generado con Norte Contable. Las fechas son de referencia y deben verificarse contra el Código de Rentas Internas vigente y las Determinaciones Administrativas y Cartas Circulares de Hacienda. No constituye asesoría contributiva.';
@@ -1994,9 +2142,18 @@ function printFactura(id){
 }
 
 /* ══════════ INIT ══════════ */
-loadState();
-$id('pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryLogin(); });
-setTimeout(()=>{ const i=$id('pinInput'); if(i&&i.focus) i.focus(); },200);
+if(DEMO||!sb){
+  /* modo demo: PIN y datos locales, como siempre */
+  loadState();
+  $id('pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryLogin(); });
+  setTimeout(()=>{ const i=$id('pinInput'); if(i&&i.focus) i.focus(); },200);
+}else{
+  /* modo nube: login por email, cada firma ve solo lo suyo */
+  $id('loginDemo').style.display='none'; $id('loginNube').style.display='block';
+  $id('passInput').addEventListener('keydown', e=>{ if(e.key==='Enter') loginNube(); });
+  $id('emailInput').addEventListener('keydown', e=>{ if(e.key==='Enter') $id('passInput').focus(); });
+  entrarNube();
+}
 </script>
 </body>
 </html>
