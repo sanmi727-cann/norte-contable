@@ -1,0 +1,2002 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Norte Contable — Gestión de práctica contributiva PR</title>
+<!--
+════════════════════════════════════════════════════════════════════
+  NORTE CONTABLE v1.1 (Demo) — Gestión de práctica para contables,
+  CPAs y preparadores de planillas de Puerto Rico · Norte
+
+  v1.1: prórrogas con fecha original y aviso de pago · checklist de
+  documentos por tipo de entidad · flujo preparado/revisado · bitácora
+  por cliente · pagos y balances con Hacienda · vencimientos de la
+  propia firma (licencia y educación continua)
+  v1.2: pestaña TAREAS — cola de trabajo por persona (al completar,
+  desaparece de la vista) · flujo de planilla en 5 etapas con fechas
+  escalonadas antes del vencimiento · tareas del día en Hoy
+────────────────────────────────────────────────────────────────────
+  INVESTIGACIÓN DE MERCADO (2026):
+  · TaxDome  $58–100/usuario/mes · #1 en G2, pero un mes para configurar
+  · Karbon   $59–89/usuario/mes + $1,499 de implementación; sin "virtual
+             drive" para workpapers (queja recurrente de practicantes)
+  · Canopy   $150/mes base, los módulos útiles son add-ons
+  · Financial Cents $19–49/usuario/mes · Jetpack $30–56/usuario/mes
+  Queja documentada de un usuario sobre entrenamiento: "$350/hr, which
+  is beyond ridiculous."
+
+  LOS DOS HUECOS QUE ATACAMOS:
+  1. TODOS cobran POR USUARIO. Una firma de 4 personas paga $240–400
+     al mes. Norte Contable es FLAT: contrata gente sin que suba.
+  2. NINGUNO conoce el calendario contributivo de Puerto Rico. No saben
+     qué es la Planilla Mensual de IVU (SC 2915), el 480.9A de retención
+     en el origen, el 499-R-1B patronal trimestral, las informativas 480,
+     ni que Hacienda pospone fechas por Determinación Administrativa.
+     Un practice management que no sabe tus fechas no te sirve de nada.
+
+  ⚠️ AVISO PROFESIONAL: las fechas del catálogo son valores de referencia
+  EDITABLES. El contable es responsable de verificar cada vencimiento
+  contra el Código de Rentas Internas vigente, las Determinaciones
+  Administrativas y Cartas Circulares de Hacienda. Este programa organiza
+  el trabajo; NO constituye asesoría contributiva ni sustituye el juicio
+  profesional.
+
+  SCHEMA SUPABASE (referencia)
+  create table firmas (id uuid pk, nombre text, config jsonb);
+  create table clientes (id uuid pk, firma_id uuid fk, nombre text, tipo text, ein text, contacto text, tel text, email text, perfil jsonb, honorario numeric, estado text);
+  create table obligaciones (id uuid pk, codigo text, nombre text, forma text, frecuencia text, dia int, base text, aplica jsonb);
+  create table radicaciones (id uuid pk, cliente_id uuid fk, obligacion text, periodo text, vence date, vence_original date, estado text, radicado date, confirmacion text, notas text, asignado text, preparado_por text, revisado_por text, monto_pago numeric, pago_pend bool, prorroga jsonb);
+  create table pendientes (id uuid pk, cliente_id uuid fk, item text, solicitado date, recibido date, notas text);
+  create table bitacora (id uuid pk, cliente_id uuid fk, fecha date, quien text, texto text);
+  create table tareas (id uuid pk, cliente_id uuid fk, radicacion_id uuid fk, titulo text, asignado text, vence date, creado date, creado_por text, hecha date, hecha_por text, notas text);
+  create table tiempo (id uuid pk, cliente_id uuid fk, fecha date, minutos int, quien text, concepto text, facturable bool);
+  create table facturas (id uuid pk, cliente_id uuid fk, num int, fecha date, lineas jsonb, ivu numeric, retencion numeric, total numeric, pagos jsonb);
+════════════════════════════════════════════════════════════════════
+-->
+<style>
+/* ══════════ TOKENS — NAVY ATLÁNTICO + ORO ══════════ */
+:root{
+  --navy:#22333B; --navy-d:#131E24; --navy-m:#40575F; --navy-l:#DDE4E5; --navy-xl:#EFF3F3;
+  --ink:#16211F; --muted:#5C6B6B; --faint:#93A0A0;
+  --bg:#F3F5F4; --card:#FFFFFF; --line:#DEE3E2; --line-d:#C5CDCB;
+  --gold:#B5811F; --gold-l:#FAF1DC;
+  --coral:#C7442E; --coral-l:#FAE7E2;
+  --ok:#2E7D5B; --ok-l:#E2F1EA; --violet:#5B5BA6; --violet-l:#E9E9F6;
+  --r:12px; --r-s:8px;
+  --shadow:0 1px 3px rgba(13,34,51,.08), 0 4px 14px rgba(13,34,51,.06);
+  --shadow-lg:0 8px 30px rgba(13,34,51,.24);
+  --font:'Avenir Next','Segoe UI',system-ui,-apple-system,'Helvetica Neue',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);font-size:15px;line-height:1.45}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font-family:inherit;font-size:15px;color:var(--ink)}
+:focus-visible{outline:2px solid var(--navy-m);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+/* ══════════ LOGIN ══════════ */
+#loginScreen{position:fixed;inset:0;z-index:200;background:linear-gradient(168deg,var(--navy-d) 0%,var(--navy) 58%,var(--navy-m) 100%);display:flex;align-items:center;justify-content:center;padding:20px}
+.login-card{width:100%;max-width:400px;text-align:center}
+.brand-mark{color:#fff;margin-bottom:34px}
+.brand-mark .top{font-size:12px;letter-spacing:.42em;text-transform:uppercase;opacity:.75;margin-bottom:10px}
+.brand-mark h1{font-size:40px;font-weight:800;letter-spacing:.1em;line-height:1}
+.brand-mark h1 span{color:#8FBF9F;font-weight:300}
+.brand-mark .sub{font-size:13.5px;opacity:.8;margin-top:12px;letter-spacing:.04em}
+.brand-roof{width:110px;height:16px;margin:18px auto 0;opacity:.6}
+.login-box{background:#fff;border-radius:18px;padding:28px 26px;box-shadow:var(--shadow-lg)}
+.login-box label{display:block;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;font-weight:600}
+#pinInput{width:100%;text-align:center;font-size:30px;letter-spacing:.5em;padding:12px 8px 12px 16px;border:2px solid var(--line-d);border-radius:var(--r);font-weight:700}
+#pinInput:focus{border-color:var(--navy-m);outline:none}
+.pinpad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+.pinpad button{padding:14px 0;font-size:20px;font-weight:600;background:var(--navy-xl);border-radius:var(--r);transition:background .12s}
+.pinpad button:hover{background:var(--navy-l)}
+.pinpad button.act{background:var(--navy);color:#fff}
+.login-hint{margin-top:16px;font-size:12.5px;color:var(--muted)}
+.login-err{color:var(--coral);font-size:13px;margin-top:10px;min-height:18px;font-weight:600}
+
+/* ══════════ APP SHELL ══════════ */
+#app{display:none;min-height:100vh}
+header.topbar{background:var(--navy-d);color:#fff;padding:0 18px;display:flex;align-items:center;gap:14px;height:58px;position:sticky;top:0;z-index:90}
+.topbar .logo{font-weight:800;letter-spacing:.08em;font-size:16px;white-space:nowrap}
+.topbar .logo span{color:#8FBF9F;font-weight:300}
+.topbar .clin{font-size:12.5px;opacity:.72;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar .spacer{flex:1}
+.topbar .datebox{font-size:12.5px;opacity:.85;text-align:right;line-height:1.25;white-space:nowrap}
+.topbar .who{background:rgba(255,255,255,.14);padding:5px 12px;border-radius:99px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.topbar .out{opacity:.75;font-size:12.5px;padding:6px 4px}
+.topbar .out:hover{opacity:1}
+nav.tabs{background:#fff;border-bottom:1px solid var(--line);display:flex;overflow-x:auto;position:sticky;top:58px;z-index:89;scrollbar-width:none}
+nav.tabs::-webkit-scrollbar{display:none}
+nav.tabs button{padding:13px 15px;font-size:14px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:6px}
+nav.tabs button:hover{color:var(--navy)}
+nav.tabs button.on{color:var(--navy);border-bottom-color:var(--gold)}
+nav.tabs button .bub{background:var(--coral);color:#fff;font-size:10.5px;min-width:18px;height:18px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;font-weight:700}
+main{max-width:1180px;margin:0 auto;padding:20px 16px 90px}
+
+/* ══════════ PRIMITIVES ══════════ */
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:18px;margin-bottom:16px}
+.card.tight{padding:14px}
+.card h2{font-size:16px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card h2 .grow{flex:1}
+.eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);font-weight:700;margin-bottom:4px;display:block}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:820px){.grid3{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.grid2,.grid3{grid-template-columns:1fr}}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:var(--r-s);font-size:14px;font-weight:600;background:var(--navy);color:#fff;transition:filter .12s;line-height:1.2}
+.btn:hover{filter:brightness(1.18)}
+.btn.sec{background:var(--navy-xl);color:var(--navy)}
+.btn.ghost{background:transparent;color:var(--navy);border:1.5px solid var(--line-d)}
+.btn.warn{background:var(--coral)}
+.btn.ok{background:var(--ok)}
+.btn.gold{background:var(--gold)}
+.btn.sm{padding:6px 10px;font-size:12.5px;border-radius:7px}
+.btn.xs{padding:3px 8px;font-size:11.5px;border-radius:6px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.wa{background:#1FAF5E}
+.link{color:var(--navy-m);font-weight:600;cursor:pointer;text-decoration:none}
+.link:hover{text-decoration:underline}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:99px;font-size:11.5px;font-weight:700;letter-spacing:.02em}
+.b-gray{background:#EDF0F2;color:#5A6E7E}
+.b-navy{background:var(--navy-l);color:var(--navy)}
+.b-gold{background:var(--gold-l);color:var(--gold)}
+.b-coral{background:var(--coral-l);color:var(--coral)}
+.b-ok{background:var(--ok-l);color:var(--ok)}
+.b-violet{background:var(--violet-l);color:var(--violet)}
+.muted{color:var(--muted);font-size:13px}
+.tiny{font-size:12px;color:var(--faint)}
+.money{font-variant-numeric:tabular-nums;font-weight:700}
+.divider{height:1px;background:var(--line);margin:14px 0}
+.empty{padding:28px 16px;text-align:center;color:var(--muted);font-size:14px}
+.empty .big{font-size:30px;margin-bottom:8px}
+
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{text-align:left;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);padding:8px 10px;border-bottom:1.5px solid var(--line);font-weight:700}
+.tbl td{padding:9px 10px;border-bottom:1px solid var(--navy-xl);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr.click:hover td{background:var(--navy-xl);cursor:pointer}
+.tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+.tbl-wrap{overflow-x:auto;margin:0 -4px}
+
+.fld{margin-bottom:12px}
+.fld label{display:block;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.fld input,.fld select,.fld textarea{width:100%;padding:9px 11px;border:1.5px solid var(--line-d);border-radius:var(--r-s);background:#fff}
+.fld input:focus,.fld select:focus,.fld textarea:focus{border-color:var(--navy-m);outline:none}
+.fld textarea{resize:vertical;min-height:64px}
+.fld .note{font-size:12px;color:var(--faint);margin-top:4px}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.frow3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:560px){.frow,.frow3{grid-template-columns:1fr}}
+.chkline{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:8px}
+.chkline input{width:17px;height:17px;accent-color:var(--navy)}
+
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.kpis.c3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:820px){.kpis,.kpis.c3{grid-template-columns:1fr 1fr}}
+.kpi{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 16px}
+.kpi .v{font-size:26px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:12px;color:var(--muted);margin-top:3px;font-weight:600}
+.kpi.hot .v{color:var(--coral)}
+.kpi.good .v{color:var(--ok)}
+
+/* ══════════ MAPA DE CUOTAS — elemento firma ══════════ */
+.umap{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:9px}
+.utile{border-radius:10px;padding:10px 8px;text-align:center;cursor:pointer;border:1.5px solid transparent;transition:transform .1s}
+.utile:hover{transform:translateY(-2px)}
+.utile .n{font-weight:800;font-size:14.5px}
+.utile .s{font-size:10.5px;font-weight:700;margin-top:2px;letter-spacing:.02em}
+.utile.ok{background:var(--ok-l);color:var(--ok);border-color:#BFDFD2}
+.utile.warn{background:var(--gold-l);color:var(--gold);border-color:#EAD3A2}
+.utile.bad{background:var(--coral-l);color:var(--coral);border-color:#EFC2B7}
+.utile.off{background:#EFF1F2;color:var(--faint);border-color:var(--line)}
+.maplegend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:var(--muted)}
+.maplegend .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+
+/* estado de cuenta / historial */
+.histitem{border-left:3px solid var(--navy-l);padding:8px 0 8px 14px;margin-left:6px}
+.histitem .d{font-size:12px;color:var(--faint);font-weight:700}
+.remitem{display:flex;gap:12px;align-items:center;padding:11px 4px;border-bottom:1px solid var(--navy-xl);flex-wrap:wrap}
+.remitem:last-child{border-bottom:none}
+.remitem .ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+.remitem .bd{flex:1;min-width:180px}
+.remitem .bd .n{font-weight:700;font-size:14px}
+.remitem .bd .s{font-size:12.5px;color:var(--muted)}
+svg.chart{width:100%;height:150px;display:block}
+
+/* subtabs (ficha unidad / comunidad) */
+.subtabs{display:flex;gap:4px;border-bottom:1.5px solid var(--line);margin:16px 0 14px;overflow-x:auto;scrollbar-width:none}
+.subtabs::-webkit-scrollbar{display:none}
+.subtabs button{padding:9px 13px;font-size:13.5px;font-weight:700;color:var(--muted);border-bottom:2.5px solid transparent;white-space:nowrap}
+.subtabs button.on{color:var(--navy);border-bottom-color:var(--gold)}
+
+/* ══════════ MODAL / TOAST ══════════ */
+#modalRoot{position:fixed;inset:0;z-index:150;display:none;align-items:flex-start;justify-content:center;background:rgba(13,34,51,.5);padding:24px 12px;overflow-y:auto}
+#modalRoot.open{display:flex}
+.modal{background:#fff;border-radius:16px;width:100%;max-width:640px;box-shadow:var(--shadow-lg);animation:pop .16s ease;margin:auto 0}
+.modal.wide{max-width:860px}
+@keyframes pop{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+.modal .mh{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--line)}
+.modal .mh h3{font-size:17px;font-weight:800}
+.modal .mh button{font-size:22px;color:var(--faint);padding:2px 8px;line-height:1}
+.modal .mb{padding:18px 20px}
+.modal .mf{padding:12px 20px 18px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;border-top:1px solid var(--navy-xl)}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:300;background:var(--ink);color:#fff;padding:11px 20px;border-radius:99px;font-size:14px;font-weight:600;box-shadow:var(--shadow-lg);display:none;max-width:92vw;text-align:center}
+#toast.warn{background:var(--coral)}
+#toast.show{display:block;animation:toastin .2s ease}
+@keyframes toastin{from{transform:translate(-50%,8px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+
+/* ══════════ PRINT ══════════ */
+#printArea{display:none}
+@media print{
+  body.printing #app,body.printing #loginScreen,body.printing #modalRoot,body.printing #toast{display:none!important}
+  body.printing #printArea{display:block!important}
+  @page{margin:14mm}
+}
+.pr-doc{font-family:Georgia,'Times New Roman',serif;color:#111;font-size:13px;line-height:1.5;max-width:720px}
+.pr-doc .ph{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #22333B;padding-bottom:10px;margin-bottom:16px}
+.pr-doc .ph .b{font-size:19px;font-weight:800;letter-spacing:.06em;font-family:var(--font)}
+.pr-doc .ph .b span{font-weight:300;color:#40575F}
+.pr-doc .ph .cd{font-size:11.5px;text-align:right;color:#333}
+.pr-doc h2{font-size:16px;letter-spacing:.14em;text-transform:uppercase;margin:14px 0 10px;font-family:var(--font)}
+.pr-doc table{width:100%;border-collapse:collapse;font-size:12.5px;margin:8px 0}
+.pr-doc th{background:#EFF3F3;text-align:left;padding:6px 9px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #C6D0D6;font-family:var(--font)}
+.pr-doc td{padding:6px 9px;border:1px solid #DDE3E0}
+.pr-doc .sig{margin-top:44px;display:flex;gap:40px}
+.pr-doc .sig .s{flex:1;border-top:1.5px solid #333;padding-top:5px;font-size:11.5px;text-align:center}
+.pr-doc .fine{font-size:10.5px;color:#555;margin-top:14px}
+.pr-doc .tot{text-align:right;font-size:15px;font-weight:800;margin-top:6px}
+
+/* ══════════ TABLERO DE RADICACIÓN ══════════ */
+.rad-wrap{overflow-x:auto;padding-bottom:6px}
+.rad{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%}
+.rad th{padding:7px 8px;text-align:center;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);white-space:nowrap;font-weight:800;border-bottom:2px solid var(--line-d);background:var(--card);position:sticky;top:0}
+.rad th.cli{text-align:left;min-width:190px;left:0;z-index:3}
+.rad td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:center}
+.rad td.cli{text-align:left;font-weight:700;font-size:12.5px;white-space:nowrap;background:var(--card);position:sticky;left:0;z-index:2;padding-right:14px}
+.rad td.cli .sub{display:block;font-weight:500;font-size:10.5px;color:var(--faint)}
+.chip{display:inline-block;min-width:30px;padding:3px 7px;border-radius:6px;font-size:10.5px;font-weight:800;cursor:pointer;border:1.5px solid transparent;user-select:none;line-height:1.35}
+.chip.pend{background:var(--card);border-color:var(--line-d);color:var(--faint)}
+.chip.prox{background:var(--gold-l);border-color:var(--gold);color:var(--gold)}
+.chip.venc{background:var(--coral-l);border-color:var(--coral);color:var(--coral)}
+.chip.list{background:var(--ok-l);border-color:var(--ok);color:var(--ok)}
+.chip.prorr{background:var(--violet-l);border-color:var(--violet);color:var(--violet)}
+.chip.na{background:transparent;border-color:transparent;color:var(--line-d)}
+.chip:hover{filter:brightness(.96)}
+/* semáforo de plazo */
+.dl{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid var(--line)}
+.dl:last-child{border-bottom:0}
+.dl .dd{width:44px;text-align:center;flex-shrink:0;border-radius:8px;padding:5px 2px;font-weight:800;font-size:15px;line-height:1.05}
+.dl .dd small{display:block;font-size:9px;font-weight:700;letter-spacing:.06em;opacity:.8}
+.dl .dd.r{background:var(--coral-l);color:var(--coral)} .dl .dd.a{background:var(--gold-l);color:var(--gold)} .dl .dd.v{background:var(--ok-l);color:var(--ok)}
+.dl .bd{flex:1;min-width:0}
+.dl .bd .n{font-weight:700;font-size:13.5px}
+.dl .bd .s{font-size:11.5px;color:var(--muted);margin-top:1px}
+.avisoley{background:var(--gold-l);border:1.5px solid var(--gold);border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.5;margin-bottom:16px}
+.avisoley b{color:var(--gold)}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="brand-mark">
+      <div class="top">Norte · Puerto Rico</div>
+      <h1>NORTE<span>CONTABLE</span></h1>
+      <div class="sub">Calendario contributivo, radicaciones y facturación</div>
+      <svg class="brand-roof" viewBox="0 0 110 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 13 L14 3 M14 13 L26 13 M36 3 L36 13 M32 3 L44 3 M56 13 Q56 3 64 3 Q72 3 72 13 M84 13 L84 3 M84 3 L94 13 M94 13 L94 3" stroke="#8FBF9F" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+    </div>
+    <div class="login-box">
+      <label for="pinInput">PIN de acceso</label>
+      <input id="pinInput" type="password" inputmode="numeric" maxlength="4" autocomplete="off">
+      <div class="pinpad">
+        <button onclick="pinKey('1')">1</button><button onclick="pinKey('2')">2</button><button onclick="pinKey('3')">3</button>
+        <button onclick="pinKey('4')">4</button><button onclick="pinKey('5')">5</button><button onclick="pinKey('6')">6</button>
+        <button onclick="pinKey('7')">7</button><button onclick="pinKey('8')">8</button><button onclick="pinKey('9')">9</button>
+        <button onclick="pinKey('C')">⌫</button><button onclick="pinKey('0')">0</button><button class="act" onclick="tryLogin()">Entrar</button>
+      </div>
+      <div class="login-err" id="loginErr"></div>
+      <div class="login-hint">Demo — Socio: <b>1234</b> · Staff: <b>0000</b></div>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <header class="topbar">
+    <div class="logo">NORTE<span>CONTABLE</span></div>
+    <div class="clin" id="topClin"></div>
+    <div class="spacer"></div>
+    <div class="datebox" id="topDate"></div>
+    <div class="who" id="topWho"></div>
+    <button class="out" onclick="logout()" title="Cerrar sesión">Salir</button>
+  </header>
+  <nav class="tabs" id="mainTabs">
+    <button data-tab="hoy" onclick="setTab('hoy')">Hoy <span class="bub" id="bubHoy" style="display:none"></span></button>
+    <button data-tab="tablero" onclick="setTab('tablero')">Tablero de radicación</button>
+    <button data-tab="clientes" onclick="setTab('clientes')">Clientes</button>
+    <button data-tab="documentos" onclick="setTab('documentos')">Documentos <span class="bub" id="bubDoc" style="display:none"></span></button>
+    <button data-tab="tareas" onclick="setTab('tareas')">Tareas <span class="bub" id="bubTar" style="display:none"></span></button>
+    <button data-tab="tiempo" onclick="setTab('tiempo')">Tiempo</button>
+    <button data-tab="facturacion" data-admin="1" onclick="setTab('facturacion')">Facturación</button>
+    <button data-tab="config" data-admin="1" onclick="setTab('config')">Config</button>
+  </nav>
+  <main id="mainContent"></main>
+</div>
+
+<div id="modalRoot" onclick="if(event.target===this)closeModal()"><div class="modal" id="modalBox"></div></div>
+<div id="toast"></div>
+<div id="printArea"></div>
+
+<script>
+'use strict';
+
+/* ══════════ CONSTANTES ══════════ */
+const TIPOS_CLIENTE=['Individuo','Individuo con negocio','Corporación','LLC','Entidad conducto','Sin fines de lucro'];
+const EST_RAD={pendiente:{n:'Pendiente',cls:'pend'},proceso:{n:'En proceso',cls:'prox'},espera:{n:'Esperando cliente',cls:'prox'},prorroga:{n:'En prórroga',cls:'prorr'},radicado:{n:'Radicado',cls:'list'},na:{n:'No aplica',cls:'na'}};
+const METODOS_PAGO=['ATH Móvil','Transferencia','Cheque','Efectivo','Tarjeta'];
+const MESES_ABR=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const MESES_FULL=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const DOCS_COMUNES=['Estados de banco','Facturas de gastos','Nómina del período','Informativas 480 recibidas','W-2 / 499R-2','Comprobantes de retención','Inventario al cierre','Contratos nuevos','Recibos de contribución sobre la propiedad'];
+
+/* ══════════ STORAGE / UTILS ══════════ */
+const STORE_KEY='norteContable_v1';
+let memStore=null;
+function storageGet(){ try{ return localStorage.getItem(STORE_KEY); }catch(e){ return memStore; } }
+function storageSet(v){ try{ localStorage.setItem(STORE_KEY,v); }catch(e){ memStore=v; } }
+let state=null;
+function saveState(){ storageSet(JSON.stringify(state)); }
+function loadState(){
+  const raw=storageGet();
+  if(raw){ try{ state=JSON.parse(raw); if(state&&state.clientes){ migrar(); return; } }catch(e){} }
+  state=seedState(); saveState();
+}
+function migrar(){
+  /* completa campos que un estado guardado por versiones anteriores no tiene */
+  const c=state.config;
+  let dirty=false;
+  if(!c.plantillasDocs){ c.plantillasDocs=plantillasDefault(); dirty=true; }
+  if(!state.bitacora){ state.bitacora=[]; dirty=true; }
+  if(!state.tareas){ state.tareas=[]; dirty=true; }
+  if(c.firma.licVence===undefined){ c.firma.licVence=''; c.firma.educVence=''; dirty=true; }
+  state.radicaciones.forEach(r=>{
+    if(r.preparadoPor===undefined){ r.preparadoPor=''; r.revisadoPor=''; r.montoPago=null; r.pagoPend=false; dirty=true; }
+  });
+  if(dirty) saveState();
+}
+const $id=id=>document.getElementById(id);
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function uid(p){ return p+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function hoyISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function mesISO(){ return hoyISO().slice(0,7); }
+function daysFrom(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function addMeses(iso,n){ const d=parseISO(iso); d.setMonth(d.getMonth()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function addDias(iso,n){ const d=parseISO(iso); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function mesRel(n){ const d=new Date(); d.setMonth(d.getMonth()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function parseISO(iso){ const [y,m,d]=iso.split('-').map(Number); return new Date(y,m-1,d||1); }
+function diffDias(a,b){ return Math.round((parseISO(a)-parseISO(b))/86400000); }
+function fmtF(iso){ if(!iso) return '—'; const d=parseISO(iso); return d.getDate()+' '+MESES_ABR[d.getMonth()]+' '+d.getFullYear(); }
+function fmtCorta(iso){ const d=parseISO(iso); return d.getDate()+' '+MESES_ABR[d.getMonth()]; }
+function fmtMes(mes){ const [y,m]=mes.split('-').map(Number); return MESES_FULL[m-1]+' '+y; }
+function money(n){ const v=Number(n)||0; return (v<0?'-$':'$')+Math.abs(v).toFixed(2); }
+function hhmm(min){ const h=Math.floor(min/60), m=min%60; return h+'h'+(m?' '+m+'m':''); }
+function telWA(t){ const d=String(t||'').replace(/\D/g,''); return d.length===10?'1'+d:d; }
+function waLink(tel,txt){ return 'https://wa.me/'+telWA(tel)+'?text='+encodeURIComponent(txt); }
+function toast(msg,warn){ const t=$id('toast'); t.textContent=msg; t.className=warn?'warn show':'show'; clearTimeout(t._to); t._to=setTimeout(()=>t.className='',3000); }
+function openModal(titulo,html,wide){
+  const box=$id('modalBox');
+  box.className='modal'+(wide?' wide':'');
+  box.innerHTML='<div class="mh"><h3>'+esc(titulo)+'</h3><button onclick="closeModal()" aria-label="Cerrar">×</button></div>'+html;
+  $id('modalRoot').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeModal(){ $id('modalRoot').classList.remove('open'); document.body.style.overflow=''; }
+function askConfirm(msg,onYes){
+  openModal('Confirmar','<div class="mb"><p style="font-size:15px">'+esc(msg)+'</p></div>'
+    +'<div class="mf"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn warn" id="confirmYesBtn">Sí, continuar</button></div>');
+  $id('confirmYesBtn').onclick=()=>{ closeModal(); onYes(); };
+}
+function proxNum(campo){ const n=state.config[campo]||1; state.config[campo]=n+1; saveState(); return n; }
+
+/* ══════════════════════════════════════════════════════════════════
+   MOTOR DE CALENDARIO CONTRIBUTIVO DE PUERTO RICO
+   ──────────────────────────────────────────────────────────────────
+   Cada obligación declara: su frecuencia, el día de vencimiento y a
+   qué perfil de cliente aplica. El motor genera las radicaciones de
+   cada cliente automáticamente — nadie transcribe fechas a mano.
+
+   ⚠️ Fechas de REFERENCIA, editables en Config. El contable verifica
+   contra el Código de Rentas Internas vigente y las Determinaciones
+   Administrativas de Hacienda. Hacienda pospone fechas con frecuencia
+   (huracanes, fallas de SURI); usa "Posponer" cuando ocurra.
+   ══════════════════════════════════════════════════════════════════ */
+function catalogoObligaciones(){
+  return [
+    /* MENSUALES */
+    {id:'ivu',    forma:'SC 2915',  nombre:'Planilla Mensual de IVU',
+     frec:'mensual', dia:20, offset:1, aplica:'ivu',
+     nota:'Vence el día 20 del mes siguiente. Se radica y paga en SURI.'},
+    {id:'ret480', forma:'480.9A',   nombre:'Depósito de retención en el origen (servicios)',
+     frec:'mensual', dia:10, offset:1, aplica:'retiene',
+     nota:'Retención sobre pagos por servicios prestados. Vence el día 10 del mes siguiente.'},
+    {id:'imp',    forma:'SC 2915 D',nombre:'Impuesto sobre uso en importaciones',
+     frec:'mensual', dia:10, offset:1, aplica:'importa',
+     nota:'Aplica a comerciantes que importan. Vence el día 10 del mes siguiente.'},
+    {id:'arb',    forma:'SC 2225',  nombre:'Planilla Mensual de Arbitrios',
+     frec:'mensual', dia:10, offset:1, aplica:'arbitrios',
+     nota:'Solo para negocios sujetos a arbitrios específicos.'},
+    /* TRIMESTRALES */
+    {id:'patronal',forma:'499-R-1B',nombre:'Planilla Trimestral Patronal de Contribución Retenida',
+     frec:'trimestral', dia:31, offset:1, aplica:'patrono',
+     nota:'Vence el último día del mes siguiente al cierre del trimestre.'},
+    {id:'desempleo',forma:'PR-UI / Choferil',nombre:'Seguro por desempleo y seguro choferil',
+     frec:'trimestral', dia:30, offset:1, aplica:'patrono',
+     nota:'Departamento del Trabajo. Verifica la fecha exacta del trimestre.'},
+    {id:'noretenedor',forma:'Informe trimestral',nombre:'Informe de Agente No Retenedor de IVU',
+     frec:'trimestral', dia:31, offset:1, aplica:'noretenedor',
+     nota:'Para comerciantes con certificado de No Retenedor. Confirma vigencia del requisito.'},
+    /* ESTIMADAS */
+    {id:'estimada',forma:'480-E',   nombre:'Contribución estimada',
+     frec:'estimada', dias:[[4,15],[6,15],[9,15],[1,15]], aplica:'estimada',
+     nota:'Cuatro plazos: 15 de abril, junio y septiembre, y 15 de enero siguiente.'},
+    /* ANUALES */
+    {id:'planilla_ind',forma:'481.0',nombre:'Planilla de Contribución sobre Ingresos — Individuo',
+     frec:'anual', mes:4, dia:15, aplica:'individuo',
+     nota:'Vence el 15 de abril. Prórroga automática disponible; el pago no se prorroga.'},
+    {id:'planilla_corp',forma:'480.2',nombre:'Planilla de Contribución sobre Ingresos — Corporación',
+     frec:'anual_cierre', mesesTrasCierre:3, dia:15, aplica:'corporacion',
+     nota:'Vence el día 15 del cuarto mes tras el cierre del año contributivo.'},
+    {id:'planilla_ec',forma:'480.2(EC)',nombre:'Planilla Informativa — Entidad Conducto',
+     frec:'anual_cierre', mesesTrasCierre:2, dia:15, aplica:'conducto',
+     nota:'Vence el día 15 del tercer mes tras el cierre.'},
+    {id:'informativas',forma:'480.6 / 480.7',nombre:'Informativas y comprobantes de retención',
+     frec:'anual', mes:2, dia:28, aplica:'informativas',
+     nota:'Verifica la fecha del año en curso: algunas series vencen en enero y otras en febrero.'},
+    {id:'volumen',forma:'Volumen de negocios',nombre:'Declaración de volumen de negocios (patente municipal)',
+     frec:'anual', mes:4, dia:22, aplica:'patente',
+     nota:'Se radica en el municipio donde opera. Fecha típica: 22 de abril (cinco días de prórroga usual).'},
+    {id:'propiedad',forma:'CRIM',   nombre:'Planilla de propiedad mueble (CRIM)',
+     frec:'anual', mes:5, dia:15, aplica:'propiedad',
+     nota:'CRIM. Verifica la fecha vigente del año.'},
+    {id:'registro',forma:'Registro de Comerciante',nombre:'Renovación de Registro de Comerciante',
+     frec:'anual', mes:12, dia:31, aplica:'ivu',
+     nota:'Verifica la fecha de vencimiento propia de cada certificado en SURI.'},
+    {id:'corp_anual',forma:'Informe anual',nombre:'Informe Anual — Departamento de Estado',
+     frec:'anual', mes:4, dia:15, aplica:'corporacion',
+     nota:'Departamento de Estado. Aplica a corporaciones y LLC.'},
+  ];
+}
+const getObl=id=>state.config.obligaciones.find(o=>o.id===id);
+function aplicaA(cli,obl){
+  const p=cli.perfil||{};
+  switch(obl.aplica){
+    case 'ivu': return !!p.ivu;
+    case 'retiene': return !!p.retiene;
+    case 'importa': return !!p.importa;
+    case 'arbitrios': return !!p.arbitrios;
+    case 'patrono': return !!p.patrono;
+    case 'noretenedor': return !!p.noretenedor;
+    case 'estimada': return !!p.estimada;
+    case 'individuo': return cli.tipo==='Individuo'||cli.tipo==='Individuo con negocio';
+    case 'corporacion': return cli.tipo==='Corporación'||cli.tipo==='LLC';
+    case 'conducto': return cli.tipo==='Entidad conducto';
+    case 'informativas': return !!p.retiene||!!p.patrono;
+    case 'patente': return !!p.patente;
+    case 'propiedad': return !!p.propiedad;
+    default: return false;
+  }
+}
+function ultimoDiaMes(y,m){ return new Date(y,m,0).getDate(); }
+function fechaVence(obl,periodo,cli){
+  /* periodo: 'YYYY-MM' para mensual, 'YYYY-Tn' trimestral, 'YYYY' anual */
+  const dia=obl.dia||15;
+  if(obl.frec==='mensual'){
+    const [y,m]=periodo.split('-').map(Number);
+    const d=new Date(y,m-1+(obl.offset||1),1);
+    const dd=Math.min(dia,ultimoDiaMes(d.getFullYear(),d.getMonth()+1));
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(dd).padStart(2,'0');
+  }
+  if(obl.frec==='trimestral'){
+    const [y,t]=periodo.split('-T').map(Number);
+    const mesCierre=t*3;                       /* T1 cierra en marzo */
+    const d=new Date(y,mesCierre,1);           /* mes siguiente */
+    const dd=Math.min(dia,ultimoDiaMes(d.getFullYear(),d.getMonth()+1));
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(dd).padStart(2,'0');
+  }
+  if(obl.frec==='estimada'){
+    const [y,q]=periodo.split('-Q').map(Number);
+    const par=obl.dias[(q||1)-1];
+    const anio= (q===4)? y+1 : y;              /* el cuarto plazo cae en enero siguiente */
+    return anio+'-'+String(par[0]).padStart(2,'0')+'-'+String(par[1]).padStart(2,'0');
+  }
+  if(obl.frec==='anual'){
+    const y=Number(periodo)+1;                 /* se radica el año siguiente al contributivo */
+    return y+'-'+String(obl.mes).padStart(2,'0')+'-'+String(obl.dia).padStart(2,'0');
+  }
+  if(obl.frec==='anual_cierre'){
+    const cierre=(cli&&cli.cierre)||'12';      /* mes de cierre fiscal, '12' = diciembre */
+    const mc=Number(cierre);
+    const y=Number(periodo);
+    const d=new Date(y,mc-1+(obl.mesesTrasCierre||3)+1,1);
+    const dd=Math.min(obl.dia||15,ultimoDiaMes(d.getFullYear(),d.getMonth()+1));
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(dd).padStart(2,'0');
+  }
+  return hoyISO();
+}
+function etiquetaPeriodo(periodo){
+  if(periodo.indexOf('-T')>0){ const [y,t]=periodo.split('-T'); return 'T'+t+' '+y; }
+  if(periodo.indexOf('-Q')>0){ const [y,q]=periodo.split('-Q'); return 'Plazo '+q+' '+y; }
+  if(periodo.indexOf('-')>0) return fmtMes(periodo);
+  return 'Año '+periodo;
+}
+
+/* ══════════ GENERACIÓN Y ESTADO DE RADICACIONES ══════════ */
+function periodosDe(obl,ref){
+  /* ref = 'YYYY-MM' del mes de trabajo; devuelve los períodos con vencimiento cercano */
+  const [y,m]=ref.split('-').map(Number);
+  if(obl.frec==='mensual') return [mesRelDe(ref,-1), ref];        /* el mes pasado y el corriente */
+  if(obl.frec==='trimestral'){ const t=Math.ceil(m/3); const tp=t===1?4:t-1; const yp=t===1?y-1:y; return [yp+'-T'+tp, y+'-T'+t]; }
+  if(obl.frec==='estimada') return [y+'-Q1',y+'-Q2',y+'-Q3',y+'-Q4'];
+  return [String(y-1), String(y)];
+}
+function mesRelDe(mes,n){ const [y,m]=mes.split('-').map(Number); const d=new Date(y,m-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function keyRad(cliId,oblId,periodo){ return cliId+'|'+oblId+'|'+periodo; }
+function getRad(cliId,oblId,periodo){
+  return state.radicaciones.find(r=>r.cliId===cliId&&r.oblId===oblId&&r.periodo===periodo)||null;
+}
+function asegurarRad(cliId,oblId,periodo){
+  let r=getRad(cliId,oblId,periodo);
+  if(r) return r;
+  const cli=getCli(cliId), obl=getObl(oblId);
+  if(!cli||!obl) return null;
+  r={id:uid('r'),cliId,oblId,periodo,vence:fechaVence(obl,periodo,cli),estado:'pendiente',
+     radicado:null,confirmacion:'',asignado:'',notas:'',
+     preparadoPor:'',revisadoPor:'',montoPago:null,pagoPend:false};
+  state.radicaciones.push(r);
+  return r;
+}
+function generarPeriodo(ref){
+  let n=0;
+  clientesActivos().forEach(cli=>{
+    state.config.obligaciones.forEach(obl=>{
+      if(!aplicaA(cli,obl)) return;
+      periodosDe(obl,ref).forEach(per=>{
+        if(!getRad(cli.id,obl.id,per)){ asegurarRad(cli.id,obl.id,per); n++; }
+      });
+    });
+  });
+  if(n) saveState();
+  return n;
+}
+function estadoRad(r){
+  if(!r) return 'pend';
+  if(r.estado==='radicado') return 'list';
+  if(r.estado==='na') return 'na';
+  const d=diffDias(r.vence,hoyISO());
+  if(d<0) return 'venc';
+  if(r.estado==='prorroga') return d<=state.config.avisoDias?'prox':'prorr';
+  if(d<=state.config.avisoDias) return 'prox';
+  return 'pend';
+}
+function radsVencidas(){ return state.radicaciones.filter(r=>estadoRad(r)==='venc'); }
+function radsProximas(){ return state.radicaciones.filter(r=>estadoRad(r)==='prox'); }
+function radsDe(cliId){ return state.radicaciones.filter(r=>r.cliId===cliId); }
+function proximosVencimientos(dias){
+  const lim=daysFrom(dias||30);
+  return state.radicaciones.filter(r=>r.estado!=='radicado'&&r.estado!=='na'&&r.vence<=lim)
+    .sort((a,b)=>a.vence<b.vence?-1:1);
+}
+/* documentos pendientes del cliente */
+function docsPend(){ return state.pendientes.filter(p=>!p.recibido); }
+function docsDe(cliId){ return state.pendientes.filter(p=>p.cliId===cliId); }
+/* tareas del equipo */
+function tareasPend(){ return (state.tareas||[]).filter(t=>!t.hecha); }
+function tareasDe(cliId){ return (state.tareas||[]).filter(t=>t.cliId===cliId&&!t.hecha); }
+/* bitácora del cliente */
+function bitacoraDe(cliId){ return (state.bitacora||[]).filter(b=>b.cliId===cliId).sort((a,b)=>a.fecha<b.fecha?1:-1); }
+function addBitacora(cliId){
+  const i=$id('bit_txt'); const txt=((i&&i.value)||'').trim();
+  if(!txt){ toast('Escribe la anotación', true); return; }
+  state.bitacora.push({id:uid('b'),cliId,fecha:hoyISO(),quien:isAdmin()?'Socio':'Staff',texto:txt});
+  saveState(); renderAll(); toast('Anotado en la bitácora');
+}
+function borrarBitacora(id){ askConfirm('¿Eliminar esta anotación?',()=>{ state.bitacora=state.bitacora.filter(b=>b.id!==id); saveState(); closeModal(); renderAll(); }); }
+function bloqueadasPorDocs(){
+  const ids={};
+  docsPend().forEach(p=>{ ids[p.cliId]=true; });
+  return state.radicaciones.filter(r=>r.estado!=='radicado'&&r.estado!=='na'&&ids[r.cliId]);
+}
+/* tiempo y facturación */
+const getCli=id=>state.clientes.find(c=>c.id===id);
+function clientesActivos(){ return state.clientes.filter(c=>c.estado==='activo'); }
+function minutosDe(cliId,mes){
+  return state.tiempo.filter(t=>t.cliId===cliId&&(!mes||t.fecha.slice(0,7)===mes)).reduce((s,t)=>s+t.minutos,0);
+}
+function minutosFacturables(cliId,mes){
+  return state.tiempo.filter(t=>t.cliId===cliId&&t.facturable&&(!mes||t.fecha.slice(0,7)===mes)).reduce((s,t)=>s+t.minutos,0);
+}
+function subFactura(f){ return Math.round((f.lineas||[]).reduce((s,l)=>s+l.cant*l.precio,0)*100)/100; }
+function ivuFactura(f){
+  /* Servicios profesionales entre comerciantes: régimen especial en PR.
+     La tasa es configurable y el aviso legal vive en Config y en la factura. */
+  if(!state.config.ivu.activo||f.exentoIVU) return 0;
+  return Math.round(subFactura(f)*state.config.ivu.pct)/100;
+}
+function retencionFactura(f){
+  /* Retención en el origen sobre servicios prestados: el CLIENTE retiene
+     y remite. Se muestra informativamente para que cuadre el cobro real. */
+  if(!f.retencion) return 0;
+  return Math.round(subFactura(f)*state.config.retencionPct)/100;
+}
+function totalFactura(f){ return Math.round((subFactura(f)+ivuFactura(f))*100)/100; }
+function aCobrarFactura(f){ return Math.round((totalFactura(f)-retencionFactura(f))*100)/100; }
+function pagadoFactura(f){ return Math.round((f.pagos||[]).reduce((s,p)=>s+p.monto,0)*100)/100; }
+function balanceFactura(f){ return Math.round((aCobrarFactura(f)-pagadoFactura(f))*100)/100; }
+function facturasDe(cliId){ return state.facturas.filter(f=>f.cliId===cliId); }
+function porCobrar(){ return state.facturas.filter(f=>balanceFactura(f)>0.005); }
+function antiguedad(f){ return diffDias(hoyISO(),f.fecha); }
+
+/* ══════════ PLANTILLAS DE CHECKLIST — por tipo de entidad ══════════ */
+function plantillasDefault(){
+  const corp=['Estados de banco del año','Estados financieros o balance de comprobación','Inventario al cierre','Compras de equipo o activos (depreciación)','Informativas 480 recibidas','Nómina anual y 499R-2 emitidos','Copia de la planilla del año anterior'];
+  return {
+    'Individuo':['W-2 / 499R-2','Informativas 480.6 recibidas','Intereses hipotecarios','Aportaciones a IRA o retiro','Copia de la planilla del año anterior'],
+    'Individuo con negocio':['W-2 / 499R-2','Informativas 480.6 recibidas','Estados de banco del año','Facturas y gastos del negocio','Inventario al cierre','Compras de equipo o activos','Copia de la planilla del año anterior'],
+    'Corporación':corp.slice(),
+    'LLC':corp.slice(),
+    'Entidad conducto':['Estados de banco del año','Estados financieros o balance de comprobación','Distribución entre socios','Informativas 480 recibidas','Copia de la planilla del año anterior'],
+    'Sin fines de lucro':['Estados de banco del año','Nómina anual','Donativos y subvenciones recibidas','Estados financieros'],
+  };
+}
+
+/* ══════════ SEED ══════════ */
+function seedState(){
+  const P=(o)=>Object.assign({ivu:false,retiene:false,importa:false,arbitrios:false,patrono:false,noretenedor:false,estimada:false,patente:false,propiedad:false},o||{});
+  const C=(id,nombre,tipo,ein,contacto,tel,perfil,honorario,extra)=>Object.assign(
+    {id,nombre,tipo,ein,contacto,tel,email:'',perfil:P(perfil),honorario,cierre:'12',estado:'activo',notas:''},extra||{});
+  const clientes=[
+    C('c1','Ferretería Los Hermanos, Inc.','Corporación','66-0512345','Ramón Ortiz','787-555-2001',
+      {ivu:true,retiene:true,importa:true,patrono:true,estimada:true,patente:true,propiedad:true},450,
+      {notas:'Cierre diciembre. Importa de Florida mensual.'}),
+    C('c2','Panadería La Ceiba LLC','LLC','66-0598877','Carmen Delgado','939-555-2002',
+      {ivu:true,patrono:true,patente:true,propiedad:true},325),
+    C('c3','Dra. Marisel Vega — Consultorio','Individuo con negocio','584-55-1234','Marisel Vega','787-555-2003',
+      {retiene:true,estimada:true,patente:true},275,{notas:'Servicios médicos — verificar exención de IVU'}),
+    C('c4','Transporte Cibuco Corp.','Corporación','66-0533221','Luis Nieves','787-555-2004',
+      {ivu:true,retiene:true,patrono:true,estimada:true,patente:true,propiedad:true},520,
+      {cierre:'06',notas:'CIERRE FISCAL EN JUNIO — no diciembre'}),
+    C('c5','Colmado El Tapón','Individuo con negocio','583-44-9876','Papo Rivera','787-555-2005',
+      {ivu:true,patente:true},180),
+    C('c6','Bufete Santana & Asociados','Entidad conducto','66-0577665','Lcda. Santana','787-555-2006',
+      {retiene:true,patrono:true,estimada:true,patente:true},600),
+    C('c7','Fundación Raíces del Norte','Sin fines de lucro','66-0544332','Ana Pérez','939-555-2007',
+      {patrono:true},220,{notas:'Exenta — verificar radicaciones informativas'}),
+    C('c8','José A. Morales','Individuo','582-33-4455','José Morales','787-555-2008',{estimada:true},150),
+    C('c9','Taller Hermanos Santiago','Individuo con negocio','581-22-7788','Cheo Santiago','787-555-2009',
+      {ivu:true,patrono:true,patente:true},240),
+    C('c10','Rentas del Norte LLC','LLC','66-0566554','Sofía Marrero','787-555-2010',
+      {patente:true,propiedad:true,estimada:true},290,{notas:'Room tax se declara en Turismo, no en Hacienda'}),
+  ];
+  const st={
+    config:{
+      firma:{nombre:'Ortiz & Asociados, CPA (demo)',lic:'Lic. 1234',dir:'Calle Baldorioty 45, Manatí, PR 00674',
+             tel:'787-555-2000',email:'firma@example.com',
+             licVence:daysFrom(45),educVence:daysFrom(150)},
+      pins:{admin:'1234',staff:'0000'},
+      avisoDias:10,
+      ivu:{activo:true,pct:4},          /* servicios profesionales B2B — editable */
+      retencionPct:10,                   /* retención en el origen por servicios */
+      tarifaHora:85,
+      proxFactura:1001,
+      staff:['Socio','Ana (staff)','Ruby (staff)'],
+      obligaciones:catalogoObligaciones(),
+      plantillasDocs:plantillasDefault(),
+    },
+    clientes, radicaciones:[], pendientes:[], tiempo:[], facturas:[], bitacora:[], tareas:[],
+  };
+  state=st;
+  /* generar el período de trabajo actual */
+  generarPeriodo(mesISO());
+  /* marcar algunas como radicadas y otras atrasadas para que la demo cuente una historia */
+  const mesAnt=mesRelDe(mesISO(),-1);
+  const anioAnt=String(new Date().getFullYear()-1);
+  state.radicaciones.forEach(r=>{
+    if(r.oblId==='ivu'&&r.periodo===mesAnt&&['c2','c5','c9'].includes(r.cliId)){
+      r.estado='radicado'; r.radicado=daysFrom(-12); r.confirmacion='SURI-'+Math.floor(100000+Math.random()*900000); r.asignado='Ana (staff)';
+      r.preparadoPor='Ana (staff)'; r.revisadoPor='Socio';
+    }
+    if(r.oblId==='ivu'&&r.periodo===mesAnt&&r.cliId==='c1'){ r.estado='espera'; r.notas='Falta el reporte de ventas de la caja'; r.asignado='Ana (staff)'; }
+    if(r.oblId==='ret480'&&r.periodo===mesAnt&&['c3','c6'].includes(r.cliId)){ r.estado='radicado'; r.radicado=daysFrom(-20); r.confirmacion='SURI-'+Math.floor(100000+Math.random()*900000); }
+    if(r.oblId==='patronal'&&r.cliId==='c4'){ r.estado='proceso'; r.asignado='Ruby (staff)'; }
+    /* prórrogas de planilla de individuo: radicadas a tiempo, plazo extendido */
+    if(r.oblId==='planilla_ind'&&r.periodo===anioAnt&&['c3','c8'].includes(r.cliId)){
+      r.venceOriginal=r.vence; r.vence=addMeses(r.vence,6); r.estado='prorroga';
+      r.prorroga={fecha:r.venceOriginal,conf:'SURI-'+Math.floor(100000+Math.random()*900000)};
+      r.notas='Prórroga radicada a tiempo; el pago estimado se hizo en abril';
+    }
+    /* cliente que radicó pero quedó debiendo: plan de pago con Hacienda */
+    if(r.oblId==='ivu'&&r.periodo===mesAnt&&r.cliId==='c5'&&r.estado==='radicado'){
+      r.pagoPend=true; r.montoPago=180; r.notas='Plan de pago con Hacienda — 3 plazos, primero pagado';
+    }
+  });
+  st.pendientes=[
+    {id:uid('p'),cliId:'c1',item:'Reporte de ventas de la caja registradora',solicitado:daysFrom(-9),recibido:null,notas:'Necesario para radicar el IVU'},
+    {id:uid('p'),cliId:'c1',item:'Facturas de importación del mes',solicitado:daysFrom(-9),recibido:null,notas:''},
+    {id:uid('p'),cliId:'c4',item:'Nómina del trimestre',solicitado:daysFrom(-4),recibido:null,notas:'Para el 499-R-1B'},
+    {id:uid('p'),cliId:'c6',item:'Estados de banco de marzo',solicitado:daysFrom(-15),recibido:daysFrom(-2),notas:''},
+    {id:uid('p'),cliId:'c10',item:'Contrato de la propiedad nueva',solicitado:daysFrom(-2),recibido:null,notas:''},
+  ];
+  st.bitacora=[
+    {id:uid('b'),cliId:'c1',fecha:daysFrom(-2),quien:'Ana (staff)',texto:'Ramón avisó que el reporte de la caja llega el lunes. Se le recordó que el IVU vence el 20.'},
+    {id:uid('b'),cliId:'c4',fecha:daysFrom(-4),quien:'Socio',texto:'Se le explicó a Luis que su cierre fiscal es en junio, no en diciembre. Trae la nómina esta semana.'},
+    {id:uid('b'),cliId:'c5',fecha:daysFrom(-10),quien:'Socio',texto:'Se acordó plan de pago con Hacienda en 3 plazos por el IVU del mes pasado. Primer plazo pagado.'},
+  ];
+  st.tareas=[
+    {id:uid('k'),titulo:'Llamar a Ramón por el reporte de la caja',cliId:'c1',radId:null,asignado:'Ana (staff)',vence:hoyISO(),creado:daysFrom(-2),creadoPor:'Socio',hecha:null,hechaPor:'',notas:'Sin ese reporte no se radica el IVU'},
+    {id:uid('k'),titulo:'Cuadrar la nómina del trimestre de Cibuco',cliId:'c4',radId:null,asignado:'Ruby (staff)',vence:daysFrom(2),creado:daysFrom(-4),creadoPor:'Socio',hecha:null,hechaPor:'',notas:'Para el 499-R-1B'},
+    {id:uid('k'),titulo:'Calcular la estimada del 3er plazo — Bufete Santana',cliId:'c6',radId:null,asignado:'Socio',vence:daysFrom(10),creado:daysFrom(-5),creadoPor:'Socio',hecha:null,hechaPor:'',notas:''},
+    {id:uid('k'),titulo:'Pedir contrato firmado de servicios a Rentas del Norte',cliId:'c10',radId:null,asignado:'Socio',vence:daysFrom(-3),creado:daysFrom(-9),creadoPor:'Socio',hecha:null,hechaPor:'',notas:''},
+    {id:uid('k'),titulo:'Confirmar radicación del IVU de La Ceiba en SURI',cliId:'c2',radId:null,asignado:'Ana (staff)',vence:daysFrom(-12),creado:daysFrom(-14),creadoPor:'Socio',hecha:daysFrom(-12),hechaPor:'Ana (staff)',notas:''},
+  ];
+  st.tiempo=[
+    {id:uid('t'),cliId:'c1',fecha:daysFrom(-2),minutos:95,quien:'Ana (staff)',concepto:'Conciliación bancaria y preparación de IVU',facturable:true},
+    {id:uid('t'),cliId:'c1',fecha:daysFrom(-1),minutos:40,quien:'Socio',concepto:'Llamada con el cliente sobre inventario',facturable:true},
+    {id:uid('t'),cliId:'c4',fecha:daysFrom(-3),minutos:150,quien:'Ruby (staff)',concepto:'Nómina trimestral y cuadre de retenciones',facturable:true},
+    {id:uid('t'),cliId:'c6',fecha:daysFrom(-5),minutos:60,quien:'Socio',concepto:'Planificación de estimadas',facturable:true},
+    {id:uid('t'),cliId:'c2',fecha:daysFrom(-6),minutos:30,quien:'Ana (staff)',concepto:'Correcciones en SURI tras rechazo',facturable:false},
+    {id:uid('t'),cliId:'c3',fecha:daysFrom(-1),minutos:45,quien:'Socio',concepto:'Revisión de retenciones 480.9A',facturable:true},
+    {id:uid('t'),cliId:'c1',fecha:hoyISO(),minutos:50,quien:'Ana (staff)',concepto:'Preparación de la Planilla Mensual de IVU',facturable:true},
+    {id:uid('t'),cliId:'c4',fecha:hoyISO(),minutos:35,quien:'Ruby (staff)',concepto:'Seguimiento de nómina para el 499-R-1B',facturable:true},
+  ];
+  st.facturas=[
+    {id:uid('f'),cliId:'c1',num:998,fecha:daysFrom(-45),lineas:[{concepto:'Servicios de contabilidad mensual — mes anterior',cant:1,precio:450}],
+     exentoIVU:false,retencion:true,pagos:[],notas:''},
+    {id:uid('f'),cliId:'c6',num:999,fecha:daysFrom(-20),lineas:[{concepto:'Servicios de contabilidad mensual',cant:1,precio:600}],
+     exentoIVU:false,retencion:true,pagos:[{fecha:daysFrom(-10),monto:564,metodo:'Transferencia',nota:'Neto tras retención; comprobante recibido'}],notas:''},
+    {id:uid('f'),cliId:'c2',num:1000,fecha:daysFrom(-8),lineas:[{concepto:'Servicios de contabilidad mensual',cant:1,precio:325},{concepto:'Radicación de planilla de volumen de negocios',cant:1,precio:125}],
+     exentoIVU:false,retencion:false,pagos:[],notas:''},
+  ];
+  return st;
+}
+
+/* ══════════ SESIÓN / NAV ══════════ */
+let session={role:null};
+const isAdmin=()=>session.role==='admin';
+let currentTab='hoy';
+let tabMes=mesISO(), cliId=null, finMes=mesISO(), cliBusca='', tiempoQuien='todos', tareaFiltro='todas';
+
+function pinKey(k){ const i=$id('pinInput'); if(k==='C') i.value=i.value.slice(0,-1); else if(i.value.length<4) i.value+=k; }
+function tryLogin(){
+  const pin=$id('pinInput').value;
+  if(pin===state.config.pins.admin) session.role='admin';
+  else if(pin===state.config.pins.staff) session.role='staff';
+  else { $id('loginErr').textContent='PIN incorrecto'; $id('pinInput').value=''; return; }
+  $id('loginErr').textContent=''; $id('pinInput').value='';
+  $id('loginScreen').style.display='none'; $id('app').style.display='block';
+  $id('topWho').textContent=isAdmin()?'Socio':'Staff';
+  document.querySelectorAll('#mainTabs button').forEach(b=>{ b.style.display=(isAdmin()||!b.dataset.admin)?'':'none'; });
+  setTab('hoy');
+}
+function logout(){ session.role=null; $id('app').style.display='none'; $id('loginScreen').style.display='flex'; setTimeout(()=>$id('pinInput').focus(),100); }
+function setTab(t){
+  if(!isAdmin()&&['facturacion','config'].includes(t)) t='hoy';
+  currentTab=t;
+  if(t!=='clientes') cliId=null;
+  document.querySelectorAll('#mainTabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  renderAll(); window.scrollTo(0,0);
+}
+function renderAll(){
+  refreshTop();
+  const m=$id('mainContent');
+  switch(currentTab){
+    case 'hoy': m.innerHTML=renderHoy(); break;
+    case 'tablero': m.innerHTML=renderTablero(); break;
+    case 'clientes': m.innerHTML= cliId? renderFichaCli(cliId) : renderClientes(); break;
+    case 'documentos': m.innerHTML=renderDocumentos(); break;
+    case 'tareas': m.innerHTML=renderTareas(); break;
+    case 'tiempo': m.innerHTML=renderTiempo(); break;
+    case 'facturacion': m.innerHTML=isAdmin()?renderFacturacion():''; break;
+    case 'config': m.innerHTML=isAdmin()?renderConfig():''; break;
+  }
+}
+function refreshTop(){
+  $id('topClin').textContent=state.config.firma.nombre;
+  const d=new Date();
+  const dias=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+  $id('topDate').innerHTML='<b>'+dias[d.getDay()]+'</b><br>'+fmtF(hoyISO());
+  const nv=radsVencidas().length;
+  const b=$id('bubHoy'); b.style.display=nv?'':'none'; b.textContent=nv;
+  const nd=docsPend().length;
+  const bd=$id('bubDoc'); bd.style.display=nd?'':'none'; bd.textContent=nd;
+  const nt=tareasPend().filter(t=>t.vence<=hoyISO()).length;
+  const bt=$id('bubTar'); bt.style.display=nt?'':'none'; bt.textContent=nt;
+}
+function kpi(v,l,cls){ return '<div class="kpi '+(cls||'')+'"><div class="v">'+v+'</div><div class="l">'+esc(l)+'</div></div>'; }
+const AVISO='<div class="avisoley"><b>Fechas de referencia.</b> El catálogo de obligaciones es editable y sirve para organizar el trabajo de la firma. El contable es responsable de verificar cada vencimiento contra el Código de Rentas Internas vigente y las Determinaciones Administrativas y Cartas Circulares de Hacienda. Este programa no constituye asesoría contributiva.</div>';
+function verCli(id){ currentTab='clientes'; cliId=id;
+  document.querySelectorAll('#mainTabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab==='clientes'));
+  renderAll(); window.scrollTo(0,0); }
+function avisosFirma(){
+  const f=state.config.firma, out=[];
+  [[f.licVence,'Renovación de licencia / registro de la firma'],[f.educVence,'Fecha límite de educación continua']].forEach(par=>{
+    if(!par[0]) return;
+    const d=diffDias(par[0],hoyISO());
+    if(d<=60) out.push({fecha:par[0],label:par[1],d});
+  });
+  return out;
+}
+
+/* ══════════ HOY ══════════ */
+function renderHoy(){
+  const venc=radsVencidas(), prox=proximosVencimientos(state.config.avisoDias);
+  const bloq=bloqueadasPorDocs();
+  const mes30=proximosVencimientos(30);
+  let h='';
+  if(venc.length){
+    h+='<div class="alertband" style="background:linear-gradient(120deg,var(--coral) 0%,#A93A26 100%);color:#fff;border-radius:var(--r);padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow)">'
+      +'<div style="font-weight:800;font-size:15px">⛔ '+venc.length+' radicación(es) vencida(s)</div>'
+      +'<div style="font-size:13px;opacity:.95;margin-top:4px">'
+      +venc.slice(0,4).map(r=>esc((getCli(r.cliId)||{}).nombre)+' — '+esc((getObl(r.oblId)||{}).forma)+' ('+etiquetaPeriodo(r.periodo)+', venció '+fmtCorta(r.vence)+')').join(' · ')
+      +(venc.length>4?' · y '+(venc.length-4)+' más':'')+'</div></div>';
+  }
+  h+='<div class="kpis">'
+    +kpi(venc.length,'Vencidas',venc.length?'hot':'good')
+    +kpi(prox.length,'Vencen en '+state.config.avisoDias+' días',prox.length?'':'good')
+    +kpi(docsPend().length,'Documentos por recibir',docsPend().length?'hot':'good')
+    +kpi(clientesActivos().length,'Clientes activos')
+    +'</div>';
+
+  /* vencimientos del propio contable: licencia y educación continua */
+  const avf=avisosFirma();
+  if(avf.length){
+    h+='<div class="card" style="border-left:4px solid var(--violet)"><h2>🎓 Vencimientos de la firma</h2>';
+    avf.forEach(a=>{
+      h+='<div class="dl"><div class="dd '+(a.d<0?'r':a.d<=30?'a':'v')+'">'+(a.d<0?Math.abs(a.d):a.d)+'<small>'+(a.d<0?'ATRASO':'DÍAS')+'</small></div>'
+        +'<div class="bd"><div class="n">'+esc(a.label)+'</div><div class="s">Vence '+fmtF(a.fecha)+' · las fechas se ajustan en Config</div></div></div>';
+    });
+    h+='</div>';
+  }
+
+  /* la cola de tareas del día: lo de Hoy se resuelve desde Hoy */
+  const tHoy=tareasPend().filter(t=>t.vence<=hoyISO()).sort((a,b)=>a.vence<b.vence?-1:1);
+  if(tHoy.length){
+    h+='<div class="card" style="border-left:4px solid var(--navy)"><h2>Tareas para hoy <span class="grow"></span>'
+      +'<button class="btn sm ghost" onclick="setTab(\'tareas\')">Ver todas</button></h2>';
+    tHoy.slice(0,8).forEach(t=>{
+      const c=t.cliId?getCli(t.cliId):null;
+      const d=diffDias(t.vence,hoyISO());
+      h+='<div class="dl"><div class="dd '+(d<0?'r':'a')+'">'+(d<0?Math.abs(d):'HOY')+'<small>'+(d<0?'ATRASO':'&nbsp;')+'</small></div>'
+        +'<div class="bd"><div class="n">'+esc(t.titulo)+'</div>'
+        +'<div class="s">'+(c?esc(c.nombre)+' · ':'')+(t.asignado?esc(t.asignado):'sin asignar')+'</div></div>'
+        +'<button class="btn xs ok" onclick="completarTarea(\''+t.id+'\')" title="Marcar completada">✓</button></div>';
+    });
+    if(tHoy.length>8) h+='<p class="tiny" style="margin-top:8px">y '+(tHoy.length-8)+' más en la pestaña Tareas.</p>';
+    h+='</div>';
+  }
+
+  /* SEMÁFORO DE PLAZOS — elemento firma */
+  h+='<div class="card"><h2>Próximos 30 días <span class="grow"></span>'
+    +'<button class="btn sm sec" onclick="accionGenerar()">Generar período</button>'
+    +'<button class="btn sm ghost" onclick="printCalendario()">🖨️ Calendario</button></h2>';
+  if(!mes30.length) h+='<div class="empty"><div class="big">✓</div>Nada vence en los próximos 30 días.</div>';
+  mes30.slice(0,14).forEach(r=>{
+    const cli=getCli(r.cliId), obl=getObl(r.oblId);
+    if(!cli||!obl) return;
+    const d=diffDias(r.vence,hoyISO());
+    const cls= d<0?'r': d<=state.config.avisoDias?'a':'v';
+    const docs=docsDe(r.cliId).filter(p=>!p.recibido).length;
+    h+='<div class="dl"><div class="dd '+cls+'">'+(d<0?Math.abs(d):d)+'<small>'+(d<0?'ATRASO':'DÍAS')+'</small></div>'
+      +'<div class="bd"><div class="n">'+esc(cli.nombre)+' — '+esc(obl.forma)+'</div>'
+      +'<div class="s">'+esc(obl.nombre)+' · '+etiquetaPeriodo(r.periodo)+' · vence '+fmtF(r.vence)
+      +(r.asignado?' · '+esc(r.asignado):'')
+      +(docs?' · <b style="color:var(--coral)">'+docs+' documento(s) sin recibir</b>':'')+'</div></div>'
+      +'<button class="btn xs sec" onclick="modalRad(\''+r.id+'\')">Abrir</button></div>';
+  });
+  h+='</div>';
+
+  if(bloq.length){
+    h+='<div class="card" style="border-left:4px solid var(--gold)"><h2>Trancadas esperando al cliente</h2>'
+      +'<p class="tiny" style="margin-bottom:10px">No puedes radicar esto hasta que el cliente mande lo que le pediste. Un toque le manda el recordatorio por WhatsApp.</p>';
+    const porCli={};
+    bloq.forEach(r=>{ (porCli[r.cliId]=porCli[r.cliId]||[]).push(r); });
+    Object.keys(porCli).forEach(cid=>{
+      const cli=getCli(cid); if(!cli) return;
+      const items=docsDe(cid).filter(p=>!p.recibido);
+      h+='<div class="remitem"><div class="ic" style="background:var(--gold-l)">📄</div>'
+        +'<div class="bd"><div class="n">'+esc(cli.nombre)+' — '+items.length+' documento(s) pendiente(s)</div>'
+        +'<div class="s">Traba: '+porCli[cid].map(r=>esc((getObl(r.oblId)||{}).forma)).join(', ')+' · Pedido hace '+Math.abs(diffDias(hoyISO(),items[0].solicitado))+' días</div></div>'
+        +(cli.tel?'<a class="btn xs wa" target="_blank" rel="noopener" href="'+waDocs(cid)+'">Recordar</a>':'')
+        +'<button class="btn xs sec" onclick="verCli(\''+cid+'\')">Ver</button></div>';
+    });
+    h+='</div>';
+  }
+
+  /* clientes que radicaron pero quedaron debiendo a Hacienda */
+  const conBal=state.radicaciones.filter(r=>r.pagoPend);
+  if(conBal.length){
+    h+='<div class="card" style="border-left:4px solid var(--coral)"><h2>Balances con Hacienda</h2>'
+      +'<p class="tiny" style="margin-bottom:10px">Radicaciones donde el cliente quedó debiendo o está en plan de pago. Dale seguimiento antes de que se acumulen intereses.</p>';
+    conBal.forEach(r=>{
+      const cli=getCli(r.cliId), obl=getObl(r.oblId); if(!cli||!obl) return;
+      h+='<div class="remitem"><div class="ic" style="background:var(--coral-l)">💸</div>'
+        +'<div class="bd"><div class="n">'+esc(cli.nombre)+' — '+esc(obl.forma)+' ('+etiquetaPeriodo(r.periodo)+')</div>'
+        +'<div class="s">'+(r.montoPago!=null?'Pagado '+money(r.montoPago)+' · ':'')+esc(r.notas||'Balance pendiente')+'</div></div>'
+        +'<button class="btn xs sec" onclick="modalRad(\''+r.id+'\')">Abrir</button></div>';
+    });
+    h+='</div>';
+  }
+  return h;
+}
+function accionGenerar(){
+  const n=generarPeriodo(tabMes);
+  renderAll();
+  toast(n?n+' radicación(es) generadas para el período':'Ya estaban generadas todas las radicaciones del período');
+}
+function waDocs(cliId){
+  const cli=getCli(cliId);
+  const items=docsDe(cliId).filter(p=>!p.recibido);
+  const rads=state.radicaciones.filter(r=>r.cliId===cliId&&r.estado!=='radicado'&&r.estado!=='na'&&diffDias(r.vence,hoyISO())<=20)
+    .sort((a,b)=>a.vence<b.vence?-1:1);
+  const lineas=items.map(p=>'· '+p.item).join('\n');
+  const urg= rads.length? '\n\nLo necesito para radicar '+(getObl(rads[0].oblId)||{}).forma+', que vence el '+fmtF(rads[0].vence)+'.' : '';
+  const msg='Saludos '+(cli.contacto||'').split(' ')[0]+', le escribe '+state.config.firma.nombre+'.\n\nPara continuar con su trabajo necesitamos:\n\n'+lineas+urg
+    +'\n\nPuede mandarlos por este mismo WhatsApp o por correo. ¡Gracias!';
+  return waLink(cli.tel,msg);
+}
+
+/* ══════════ TABLERO DE RADICACIÓN — elemento firma ══════════ */
+function renderTablero(){
+  const ref=tabMes;
+  /* columnas: obligaciones que aplican a alguien en este período */
+  const cols=[];
+  state.config.obligaciones.forEach(obl=>{
+    periodosDe(obl,ref).forEach(per=>{
+      const venceEn=fechaVence(obl,per,null);
+      const d=diffDias(venceEn,hoyISO());
+      /* una prórroga mantiene viva la columna aunque la fecha original quedó atrás */
+      const conProrroga=state.radicaciones.some(r=>r.oblId===obl.id&&r.periodo===per&&r.estado==='prorroga'&&Math.abs(diffDias(r.vence,hoyISO()))<=75);
+      if((d<-45||d>75)&&!conProrroga) return;       /* ventana de trabajo */
+      if(!clientesActivos().some(c=>aplicaA(c,obl))) return;
+      cols.push({obl,per,vence:venceEn});
+    });
+  });
+  cols.sort((a,b)=>a.vence<b.vence?-1:1);
+  let h=AVISO;
+  h+='<div class="card"><h2>Tablero de radicación <span class="grow"></span>'
+    +'<input type="month" value="'+ref+'" onchange="tabMes=this.value;renderAll()" style="padding:7px 10px;border:1.5px solid var(--line-d);border-radius:8px;font-weight:600">'
+    +'<button class="btn sm sec" onclick="accionGenerar()">Generar período</button>'
+    +'<button class="btn sm ghost" onclick="printTablero()">🖨️ Imprimir</button></h2>';
+  if(!cols.length){ h+='<div class="empty">Sin obligaciones en la ventana de este período. Pulsa "Generar período".</div></div>'; return h; }
+  h+='<p class="tiny" style="margin-bottom:10px">Cada celda es una radicación. Un clic la marca radicada; vuelve a hacer clic para abrirla y anotar el número de confirmación de SURI.</p>';
+  h+='<div class="rad-wrap"><table class="rad"><tr><th class="cli">Cliente</th>';
+  cols.forEach(c=>{
+    const d=diffDias(c.vence,hoyISO());
+    h+='<th title="'+esc(c.obl.nombre)+' — vence '+fmtF(c.vence)+'">'+esc(c.obl.forma)
+      +'<br><span style="font-weight:600;color:'+(d<0?'var(--coral)':d<=state.config.avisoDias?'var(--gold)':'var(--faint)')+'">'+fmtCorta(c.vence)+'</span></th>';
+  });
+  h+='</tr>';
+  clientesActivos().forEach(cli=>{
+    h+='<tr><td class="cli" onclick="verCli(\''+cli.id+'\')" style="cursor:pointer">'+esc(cli.nombre)
+      +'<span class="sub">'+esc(cli.tipo)+(cli.cierre!=='12'?' · cierre '+MESES_ABR[Number(cli.cierre)-1]:'')+'</span></td>';
+    cols.forEach(c=>{
+      if(!aplicaA(cli,c.obl)){ h+='<td><span class="chip na">—</span></td>'; return; }
+      const r=asegurarRad(cli.id,c.obl.id,c.per);
+      const est=estadoRad(r);
+      const txt= est==='list'?'✓': est==='venc'?'!': est==='na'?'—': r.estado==='prorroga'?'P': (r.estado==='espera'?'⏳':(r.estado==='proceso'?'◐':'·'));
+      h+='<td><span class="chip '+est+'" onclick="clickChip(\''+r.id+'\')" title="'+esc(cli.nombre)+' — '+esc(c.obl.forma)+' '+etiquetaPeriodo(c.per)+'\n'+EST_RAD[r.estado].n+'\nVence '+fmtF(r.vence)+'">'+txt+'</span></td>';
+    });
+    h+='</tr>';
+  });
+  h+='</table></div>';
+  h+='<div class="maplegend" style="margin-top:12px"><span><span class="dot" style="background:#2C7A54"></span>Radicado</span>'
+    +'<span><span class="dot" style="background:#B5811F"></span>Próximo o en proceso</span>'
+    +'<span><span class="dot" style="background:#C7442E"></span>Vencido</span>'
+    +'<span><span class="dot" style="background:#5B5BA6"></span>P = en prórroga</span>'
+    +'<span><span class="dot" style="background:#C5CDCB"></span>Pendiente</span>'
+    +'<span>— No aplica a ese cliente</span></div>';
+  h+='</div>';
+  return h;
+}
+function clickChip(radId){
+  const r=state.radicaciones.find(x=>x.id===radId); if(!r) return;
+  if(r.estado==='radicado'){ modalRad(radId); return; }
+  modalRad(radId);
+}
+function modalRad(radId){
+  const r=state.radicaciones.find(x=>x.id===radId); if(!r) return;
+  const cli=getCli(r.cliId), obl=getObl(r.oblId);
+  const docs=docsDe(r.cliId).filter(p=>!p.recibido);
+  const d=diffDias(r.vence,hoyISO());
+  const optS=v=>'<option value="">— sin asignar —</option>'+state.config.staff.map(s=>'<option'+(v===s?' selected':'')+'>'+esc(s)+'</option>').join('');
+  const optsE=Object.keys(EST_RAD).map(k=>'<option value="'+k+'"'+(r.estado===k?' selected':'')+'>'+EST_RAD[k].n+'</option>').join('');
+  const esAnual=obl.frec==='anual'||obl.frec==='anual_cierre';
+  openModal(cli.nombre+' — '+obl.forma,
+    '<div class="mb">'
+    +'<p class="muted" style="margin-bottom:6px"><b>'+esc(obl.nombre)+'</b> · '+etiquetaPeriodo(r.periodo)+'</p>'
+    +'<div class="note" style="margin-bottom:12px">'+esc(obl.nota||'')+'</div>'
+    +(r.estado==='prorroga'?'<div class="avisoley" style="margin-bottom:12px;background:var(--violet-l);border-color:var(--violet)"><b style="color:var(--violet)">📤 En prórroga.</b> Vencía el '+fmtF(r.venceOriginal||r.vence)+'; el nuevo plazo para radicar es el '+fmtF(r.vence)+'. <b>El pago no se prorroga</b> — un balance sin pagar genera intereses desde la fecha original.</div>':'')
+    +(docs.length?'<div class="avisoley" style="margin-bottom:12px"><b>⏳ Faltan documentos del cliente:</b> '+docs.map(p=>esc(p.item)).join(' · ')+'</div>':'')
+    +'<div class="frow3">'
+    +'<div class="fld"><label>Vence</label><input type="date" id="rd_vence" value="'+r.vence+'"><div class="note">'+(d<0?'Vencida hace '+Math.abs(d)+' días':'Faltan '+d+' días')+'</div></div>'
+    +'<div class="fld"><label>Estado</label><select id="rd_estado">'+optsE+'</select></div>'
+    +'<div class="fld"><label>Asignado a</label><select id="rd_asig">'+optS(r.asignado)+'</select></div>'
+    +'</div><div class="frow">'
+    +'<div class="fld"><label>Preparado por</label><select id="rd_prep">'+optS(r.preparadoPor)+'</select></div>'
+    +'<div class="fld"><label>Revisado por</label><select id="rd_rev">'+optS(r.revisadoPor)+'</select><div class="note">Control de calidad: otra persona revisa antes de radicar.</div></div>'
+    +'</div><div class="frow">'
+    +'<div class="fld"><label>Fecha de radicación</label><input type="date" id="rd_fecha" value="'+(r.radicado||'')+'"></div>'
+    +'<div class="fld"><label>Número de confirmación (SURI)</label><input id="rd_conf" value="'+esc(r.confirmacion)+'" placeholder="SURI-123456"></div>'
+    +'</div><div class="frow">'
+    +'<div class="fld"><label>Pago hecho a Hacienda ($)</label><input type="number" step="0.01" id="rd_pago" value="'+(r.montoPago==null?'':r.montoPago)+'"></div>'
+    +'<div class="fld"><label>¿Balance con Hacienda?</label><select id="rd_bal"><option value="0"'+(!r.pagoPend?' selected':'')+'>No — saldado</option><option value="1"'+(r.pagoPend?' selected':'')+'>Sí — plan de pago o balance pendiente</option></select></div>'
+    +'</div>'
+    +'<div class="fld"><label>Notas</label><input id="rd_notas" value="'+esc(r.notas)+'"></div>'
+    +'</div><div class="mf" style="justify-content:space-between"><div class="row">'
+    +'<button class="btn ghost sm" onclick="posponerRad(\''+r.id+'\')">📅 Posponer</button>'
+    +(esAnual&&r.estado!=='radicado'&&r.estado!=='prorroga'?'<button class="btn ghost sm" onclick="modalProrroga(\''+r.id+'\')">📤 Prórroga</button>':'')
+    +(esAnual&&r.estado!=='radicado'?'<button class="btn ghost sm" onclick="generarFlujoPlanilla(\''+r.id+'\')" title="Crea las 5 etapas con fechas escalonadas">⚙️ Flujo de planilla</button>':'')
+    +'<button class="btn ghost sm" onclick="tareaDesdeRad(\''+r.id+'\')">🗒️ Tarea</button>'
+    +(cli.tel&&docs.length?'<a class="btn ghost sm" target="_blank" rel="noopener" href="'+waDocs(cli.id)+'">📲 Pedir documentos</a>':'')
+    +'</div><div class="row">'
+    +(r.estado!=='radicado'?'<button class="btn ok sm" onclick="marcarRadicado(\''+r.id+'\')">✓ Marcar radicada</button>':'')
+    +'<button class="btn" onclick="guardarRad(\''+r.id+'\')">Guardar</button>'
+    +'</div></div>', true);
+}
+function leerCamposRad(r){
+  return {
+    asignado:$id('rd_asig')?$id('rd_asig').value:r.asignado,
+    preparadoPor:$id('rd_prep')?$id('rd_prep').value:r.preparadoPor,
+    revisadoPor:$id('rd_rev')?$id('rd_rev').value:r.revisadoPor,
+    confirmacion:$id('rd_conf')?$id('rd_conf').value.trim():r.confirmacion,
+    montoPago:$id('rd_pago')?($id('rd_pago').value===''?null:Number($id('rd_pago').value)):r.montoPago,
+    pagoPend:$id('rd_bal')?$id('rd_bal').value==='1':r.pagoPend,
+    notas:$id('rd_notas')?$id('rd_notas').value.trim():r.notas,
+  };
+}
+function guardarRad(id){
+  const r=state.radicaciones.find(x=>x.id===id); if(!r) return;
+  Object.assign(r,leerCamposRad(r));
+  r.vence=$id('rd_vence').value; r.estado=$id('rd_estado').value;
+  r.radicado=$id('rd_fecha').value||null;
+  if(r.estado==='radicado'&&!r.radicado) r.radicado=hoyISO();
+  saveState(); closeModal(); renderAll(); toast('Guardado');
+}
+function marcarRadicado(id){
+  const r=state.radicaciones.find(x=>x.id===id); if(!r) return;
+  const obl=getObl(r.oblId);
+  const vals=leerCamposRad(r);
+  vals.radicado=$id('rd_fecha')&&$id('rd_fecha').value?$id('rd_fecha').value:hoyISO();
+  const esAnual=obl&&(obl.frec==='anual'||obl.frec==='anual_cierre');
+  if(esAnual&&!vals.revisadoPor){
+    askConfirm('Esta planilla no tiene revisor anotado. El control de calidad pide que otra persona la revise antes de radicar. ¿Radicar de todos modos?',()=>aplicarRadicado(r,vals));
+    return;
+  }
+  aplicarRadicado(r,vals);
+}
+function aplicarRadicado(r,vals){
+  Object.assign(r,vals);
+  r.estado='radicado';
+  saveState(); closeModal(); renderAll();
+  toast('Radicada'+(r.confirmacion?' — confirmación '+r.confirmacion:' — recuerda anotar la confirmación de SURI'), !r.confirmacion);
+}
+function modalProrroga(id){
+  const r=state.radicaciones.find(x=>x.id===id); if(!r) return;
+  const obl=getObl(r.oblId), cli=getCli(r.cliId);
+  openModal('Prórroga — '+((obl&&obl.forma)||''),
+    '<div class="mb">'
+    +'<p class="tiny" style="margin-bottom:10px">'+esc(cli?cli.nombre:'')+' · '+etiquetaPeriodo(r.periodo)+' · vencimiento actual: '+fmtF(r.vence)+'</p>'
+    +'<div class="avisoley" style="margin-bottom:12px"><b>La prórroga extiende el plazo para radicar, no para pagar.</b> Cualquier contribución adeudada se paga en la fecha original; lo que quede sin pagar acumula intereses y recargos desde ese día.</div>'
+    +'<div class="frow"><div class="fld"><label>Nuevo vencimiento</label><input type="date" id="pr_fecha" value="'+addMeses(r.vence,6)+'"><div class="note">Típicamente 6 meses — verifica el término vigente.</div></div>'
+    +'<div class="fld"><label>Confirmación de la prórroga (SURI)</label><input id="pr_conf" placeholder="SURI-123456"></div></div>'
+    +'</div><div class="mf"><button class="btn gold" onclick="guardarProrroga(\''+id+'\')">Registrar prórroga</button></div>');
+}
+function guardarProrroga(id){
+  const r=state.radicaciones.find(x=>x.id===id); if(!r) return;
+  const nueva=$id('pr_fecha').value;
+  if(!nueva){ toast('Indica el nuevo vencimiento', true); return; }
+  const conf=$id('pr_conf').value.trim();
+  if(!r.venceOriginal) r.venceOriginal=r.vence;
+  r.vence=nueva; r.estado='prorroga';
+  r.prorroga={fecha:hoyISO(),conf};
+  r.notas=(r.notas?r.notas+' · ':'')+'Prórroga registrada el '+fmtF(hoyISO())+(conf?' ('+conf+')':'');
+  saveState(); closeModal(); renderAll();
+  toast('Prórroga registrada — nuevo plazo para radicar: '+fmtF(nueva));
+}
+function posponerRad(id){
+  const r=state.radicaciones.find(x=>x.id===id); if(!r) return;
+  openModal('Posponer vencimiento',
+    '<div class="mb"><p class="tiny" style="margin-bottom:10px">Hacienda pospone fechas con frecuencia por Determinación Administrativa o Carta Circular. Anota aquí la nueva fecha y la referencia, para que quede documentado por qué esta radicación no estaba atrasada.</p>'
+    +'<div class="frow"><div class="fld"><label>Nueva fecha</label><input type="date" id="pp_fecha" value="'+r.vence+'"></div>'
+    +'<div class="fld"><label>Referencia (DA / CC)</label><input id="pp_ref" placeholder="Ej. DA 25-01"></div></div>'
+    +'</div><div class="mf"><button class="btn gold" onclick="guardarPosponer(\''+id+'\')">Posponer</button></div>');
+}
+function guardarPosponer(id){
+  const r=state.radicaciones.find(x=>x.id===id); if(!r) return;
+  const ref=$id('pp_ref').value.trim();
+  r.vence=$id('pp_fecha').value;
+  r.notas=(r.notas?r.notas+' · ':'')+'Pospuesta'+(ref?' por '+ref:'')+' el '+fmtF(hoyISO());
+  saveState(); closeModal(); renderAll(); toast('Vencimiento pospuesto al '+fmtF(r.vence));
+}
+
+/* ══════════ CLIENTES ══════════ */
+function renderClientes(){
+  const q=cliBusca.toLowerCase();
+  const list=state.clientes.filter(c=>!q||c.nombre.toLowerCase().includes(q)||(c.contacto||'').toLowerCase().includes(q)||(c.ein||'').includes(q));
+  let h='<div class="card"><h2>Clientes <span class="grow"></span>'
+    +'<button class="btn sm ghost" onclick="printCartera()">🖨️ Cartera</button>'
+    +'<button class="btn sm" onclick="modalCli(null)">+ Cliente</button></h2>';
+  h+='<div class="fld" style="margin-bottom:14px"><input placeholder="Buscar por nombre, contacto o EIN…" value="'+esc(cliBusca)+'" oninput="cliBusca=this.value;renderAll()"></div>';
+  h+='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Cliente</th><th>Tipo</th><th>Perfil contributivo</th><th class="num">Honorario</th><th>Pendientes</th></tr></thead><tbody>';
+  list.forEach(c=>{
+    const rads=radsDe(c.id).filter(r=>r.estado!=='radicado'&&r.estado!=='na');
+    const venc=rads.filter(r=>estadoRad(r)==='venc').length;
+    const docs=docsDe(c.id).filter(p=>!p.recibido).length;
+    h+='<tr class="click" onclick="verCli(\''+c.id+'\')">'
+      +'<td><b>'+esc(c.nombre)+'</b>'+(c.estado!=='activo'?' <span class="badge b-gray">inactivo</span>':'')+'<br><span class="tiny">'+esc(c.contacto||'')+' · '+esc(c.ein||'')+'</span></td>'
+      +'<td>'+esc(c.tipo)+(c.cierre!=='12'?'<br><span class="tiny">cierre '+MESES_ABR[Number(c.cierre)-1]+'</span>':'')+'</td>'
+      +'<td class="tiny">'+etiquetasPerfil(c).join(' · ')+'</td>'
+      +'<td class="num money">'+money(c.honorario)+'</td>'
+      +'<td>'+(venc?'<span class="badge b-coral">'+venc+' vencida(s)</span> ':'')
+      +(docs?'<span class="badge b-gold">'+docs+' doc.</span>':'')
+      +(!venc&&!docs?'<span class="badge b-ok">al día</span>':'')+'</td></tr>';
+  });
+  h+='</tbody></table></div></div>';
+  return h;
+}
+function etiquetasPerfil(c){
+  const p=c.perfil||{}, t=[];
+  if(p.ivu) t.push('IVU');
+  if(p.retiene) t.push('retiene 480.9A');
+  if(p.importa) t.push('importa');
+  if(p.arbitrios) t.push('arbitrios');
+  if(p.patrono) t.push('patrono');
+  if(p.noretenedor) t.push('no retenedor');
+  if(p.estimada) t.push('estimadas');
+  if(p.patente) t.push('patente');
+  if(p.propiedad) t.push('propiedad mueble');
+  return t.length?t:['—'];
+}
+function renderFichaCli(id){
+  const c=getCli(id); if(!c){ cliId=null; return renderClientes(); }
+  const rads=radsDe(id).sort((a,b)=>a.vence<b.vence?-1:1);
+  const abiertas=rads.filter(r=>r.estado!=='radicado'&&r.estado!=='na');
+  const docs=docsDe(id);
+  const facts=facturasDe(id);
+  const balance=facts.reduce((s,f)=>s+balanceFactura(f),0);
+  let h='<div class="card">';
+  h+='<div class="row" style="margin-bottom:10px"><span class="link" onclick="cliId=null;renderAll()">← Clientes</span></div>';
+  h+='<div class="row" style="justify-content:space-between;align-items:flex-start">'
+    +'<div><h2 style="font-size:22px;font-weight:800;margin:0">'+esc(c.nombre)+'</h2>'
+    +'<div class="muted">'+esc(c.tipo)+' · EIN/SS '+esc(c.ein||'—')+' · '+esc(c.contacto||'')+' '+esc(c.tel||'')
+    +(c.cierre!=='12'?' · <b>cierre fiscal '+MESES_FULL[Number(c.cierre)-1]+'</b>':'')+'</div>'
+    +'<div class="tiny" style="margin-top:4px">'+etiquetasPerfil(c).join(' · ')+'</div>'
+    +(c.notas?'<div class="tiny" style="margin-top:4px">📝 '+esc(c.notas)+'</div>':'')+'</div>'
+    +'<div class="row">'
+    +(c.tel?'<a class="btn sm wa" target="_blank" rel="noopener" href="'+waDocs(c.id)+'">📲 Pedir documentos</a>':'')
+    +'<button class="btn sm sec" onclick="modalDoc(null,\''+c.id+'\')">+ Documento</button>'
+    +'<button class="btn sm sec" onclick="modalTiempo(null,\''+c.id+'\')">+ Tiempo</button>'
+    +(isAdmin()?'<button class="btn sm ok" onclick="modalFactura(null,\''+c.id+'\')">+ Factura</button>':'')
+    +'<button class="btn sm ghost" onclick="printExpediente(\''+c.id+'\')">🖨️ Expediente</button>'
+    +'<button class="btn sm ghost" onclick="modalCli(\''+c.id+'\')">Editar</button>'
+    +'</div></div>';
+  h+='<div class="kpis" style="margin-top:14px">'
+    +kpi(abiertas.length,'Radicaciones abiertas',abiertas.some(r=>estadoRad(r)==='venc')?'hot':'')
+    +kpi(docs.filter(p=>!p.recibido).length,'Documentos pendientes')
+    +kpi(hhmm(minutosDe(id,mesISO())),'Tiempo este mes')
+    +kpi(money(balance),'Balance por cobrar',balance>0?'hot':'good')
+    +'</div>';
+  h+='<h2 style="margin-top:16px">Radicaciones</h2>';
+  if(!rads.length) h+='<div class="empty">Sin radicaciones. Pulsa "Generar período" en el tablero.</div>';
+  else{
+    h+='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Forma</th><th>Período</th><th>Vence</th><th>Estado</th><th>Confirmación</th></tr></thead><tbody>';
+    rads.forEach(r=>{
+      const obl=getObl(r.oblId); if(!obl) return;
+      const est=estadoRad(r);
+      h+='<tr class="click" onclick="modalRad(\''+r.id+'\')"><td><b>'+esc(obl.forma)+'</b><br><span class="tiny">'+esc(obl.nombre)+'</span></td>'
+        +'<td>'+etiquetaPeriodo(r.periodo)+'</td><td>'+fmtCorta(r.vence)+(r.venceOriginal?'<br><span class="tiny" style="text-decoration:line-through">'+fmtCorta(r.venceOriginal)+'</span>':'')+'</td>'
+        +'<td><span class="chip '+est+'">'+EST_RAD[r.estado].n+'</span>'+(r.pagoPend?'<br><span class="badge b-coral" style="margin-top:3px">balance con Hacienda</span>':'')+'</td>'
+        +'<td class="tiny">'+esc(r.confirmacion||'—')
+        +(r.preparadoPor||r.revisadoPor?'<br>Prep. '+esc(r.preparadoPor||'—')+' · Rev. '+esc(r.revisadoPor||'—'):(r.asignado?'<br>'+esc(r.asignado):''))+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  const recCnt=docs.filter(p=>p.recibido).length;
+  h+='<h2 style="margin-top:16px">Documentos solicitados'+(docs.length?' <span class="badge b-navy">'+recCnt+' de '+docs.length+' recibidos</span>':'')+'</h2>';
+  if(!docs.length) h+='<div class="empty">Sin solicitudes.</div>';
+  docs.forEach(p=>{
+    h+='<div class="remitem"><div class="ic" style="background:'+(p.recibido?'var(--ok-l)':'var(--gold-l)')+'">'+(p.recibido?'✓':'📄')+'</div>'
+      +'<div class="bd"><div class="n">'+esc(p.item)+'</div>'
+      +'<div class="s">Pedido '+fmtF(p.solicitado)+(p.recibido?' · recibido '+fmtF(p.recibido):' · <b>hace '+Math.abs(diffDias(hoyISO(),p.solicitado))+' días</b>')+(p.notas?' · '+esc(p.notas):'')+'</div></div>'
+      +(!p.recibido?'<button class="btn xs ok" onclick="marcarRecibido(\''+p.id+'\')">Recibido</button>':'')
+      +'<button class="btn xs sec" onclick="modalDoc(\''+p.id+'\')">Editar</button></div>';
+  });
+  /* tareas abiertas de este cliente */
+  const tCli=tareasDe(id).sort((a,b)=>a.vence<b.vence?-1:1);
+  h+='<h2 style="margin-top:16px">Tareas abiertas <span class="grow"></span><button class="btn sm sec" onclick="modalTarea(null,\''+id+'\')">+ Tarea</button></h2>';
+  if(!tCli.length) h+='<div class="empty">Sin tareas abiertas para este cliente.</div>';
+  tCli.forEach(t=>{
+    const d=diffDias(t.vence,hoyISO());
+    h+='<div class="remitem"><div class="ic" style="background:'+(d<0?'var(--coral-l)':'var(--navy-xl)')+'">🗒️</div>'
+      +'<div class="bd"><div class="n">'+esc(t.titulo)+'</div>'
+      +'<div class="s">vence '+fmtF(t.vence)+(d<0?' · <b style="color:var(--coral)">'+Math.abs(d)+' días de atraso</b>':'')+(t.asignado?' · '+esc(t.asignado):'')+'</div></div>'
+      +'<button class="btn xs ok" onclick="completarTarea(\''+t.id+'\')">✓</button>'
+      +'<button class="btn xs sec" onclick="modalTarea(\''+t.id+'\')">Abrir</button></div>';
+  });
+  /* bitácora: historial con fecha de todo lo hablado y acordado con el cliente */
+  const bits=bitacoraDe(id);
+  h+='<h2 style="margin-top:16px">Bitácora</h2>';
+  h+='<div class="row" style="margin-bottom:10px;flex-wrap:nowrap">'
+    +'<input id="bit_txt" placeholder="Anota una llamada, un acuerdo, un aviso al cliente…" style="flex:1;padding:9px 11px;border:1.5px solid var(--line-d);border-radius:8px" onkeydown="if(event.key===\'Enter\')addBitacora(\''+id+'\')">'
+    +'<button class="btn sm" onclick="addBitacora(\''+id+'\')">Anotar</button></div>';
+  if(!bits.length) h+='<div class="empty">Sin anotaciones todavía. Lo que no está escrito, no pasó.</div>';
+  bits.forEach(b=>{
+    h+='<div class="histitem"><div class="d">'+fmtF(b.fecha)+' · '+esc(b.quien)
+      +'<span class="link" style="float:right;color:var(--faint);font-weight:400" onclick="borrarBitacora(\''+b.id+'\')" title="Eliminar">×</span></div>'
+      +'<div>'+esc(b.texto)+'</div></div>';
+  });
+  if(isAdmin()){
+    h+='<h2 style="margin-top:16px">Facturas</h2>';
+    if(!facts.length) h+='<div class="empty">Sin facturas.</div>';
+    facts.slice().sort((a,b)=>a.fecha<b.fecha?1:-1).forEach(f=>{
+      const bal=balanceFactura(f);
+      h+='<div class="remitem"><div class="ic" style="background:'+(bal>0?'var(--coral-l)':'var(--ok-l)')+'">#'+f.num+'</div>'
+        +'<div class="bd"><div class="n">'+money(totalFactura(f))+' — '+fmtF(f.fecha)+(bal>0?' · <b style="color:var(--coral)">debe '+money(bal)+'</b>':' · pagada ✓')+'</div>'
+        +'<div class="s">'+esc((f.lineas[0]||{}).concepto||'')+(f.retencion?' · retención '+money(retencionFactura(f)):'')+'</div></div>'
+        +'<button class="btn xs sec" onclick="modalFactura(\''+f.id+'\')">Abrir</button></div>';
+    });
+  }
+  h+='</div>';
+  return h;
+}
+function modalCli(id){
+  const c=id?getCli(id):null;
+  const p=(c&&c.perfil)||{};
+  const optsT=TIPOS_CLIENTE.map(t=>'<option'+(c&&c.tipo===t?' selected':'')+'>'+t+'</option>').join('');
+  const optsM=MESES_FULL.map((m,i)=>'<option value="'+String(i+1).padStart(2,'0')+'"'+(c&&c.cierre===String(i+1).padStart(2,'0')?' selected':(!c&&i===11?' selected':''))+'>'+m+'</option>').join('');
+  const chk=(k,l,d)=>'<div class="chkline"><input type="checkbox" id="cp_'+k+'" '+(p[k]?'checked':'')+'> <b>'+l+'</b> <span class="tiny">'+d+'</span></div>';
+  openModal(c?'Editar cliente':'Nuevo cliente',
+    '<div class="mb"><div class="frow">'
+    +'<div class="fld"><label>Nombre / razón social</label><input id="cl_nom" value="'+(c?esc(c.nombre):'')+'"></div>'
+    +'<div class="fld"><label>EIN o Seguro Social</label><input id="cl_ein" value="'+(c?esc(c.ein):'')+'"></div></div>'
+    +'<div class="frow3">'
+    +'<div class="fld"><label>Tipo de entidad</label><select id="cl_tipo">'+optsT+'</select></div>'
+    +'<div class="fld"><label>Mes de cierre fiscal</label><select id="cl_cierre">'+optsM+'</select><div class="note">Determina el vencimiento de la planilla anual.</div></div>'
+    +'<div class="fld"><label>Honorario mensual</label><input type="number" id="cl_hon" step="0.01" value="'+(c?c.honorario:'')+'"></div>'
+    +'</div><div class="frow3">'
+    +'<div class="fld"><label>Persona contacto</label><input id="cl_cont" value="'+(c?esc(c.contacto):'')+'"></div>'
+    +'<div class="fld"><label>Teléfono (WhatsApp)</label><input id="cl_tel" value="'+(c?esc(c.tel):'')+'"></div>'
+    +'<div class="fld"><label>Email</label><input id="cl_email" value="'+(c?esc(c.email):'')+'"></div>'
+    +'</div>'
+    +'<div class="fld"><label>Perfil contributivo — determina qué se le genera automáticamente</label>'
+    +'<div style="max-height:230px;overflow-y:auto;border:1.5px solid var(--line-d);border-radius:8px;padding:10px">'
+    +chk('ivu','Comerciante con IVU','SC 2915 mensual + renovación de Registro de Comerciante')
+    +chk('retiene','Retiene en el origen','480.9A mensual + informativas 480 al cierre')
+    +chk('importa','Importa mercancía','SC 2915 D mensual')
+    +chk('arbitrios','Sujeto a arbitrios','SC 2225 mensual')
+    +chk('patrono','Es patrono','499-R-1B trimestral + desempleo y choferil')
+    +chk('noretenedor','Agente No Retenedor','Informe trimestral — confirma vigencia del requisito')
+    +chk('estimada','Paga estimadas','Cuatro plazos al año')
+    +chk('patente','Patente municipal','Declaración de volumen de negocios')
+    +chk('propiedad','Propiedad mueble','Planilla CRIM')
+    +'</div></div>'
+    +'<div class="frow"><div class="fld"><label>Estado</label><select id="cl_estado"><option value="activo"'+(!c||c.estado==='activo'?' selected':'')+'>Activo</option><option value="inactivo"'+(c&&c.estado==='inactivo'?' selected':'')+'>Inactivo</option></select></div>'
+    +'<div class="fld"><label>Notas</label><input id="cl_notas" value="'+(c?esc(c.notas):'')+'"></div></div>'
+    +'</div><div class="mf"><button class="btn" onclick="guardarCli(\''+(c?c.id:'')+'\')">Guardar</button></div>', true);
+}
+function guardarCli(id){
+  const nombre=$id('cl_nom').value.trim();
+  if(!nombre){ toast('Nombre requerido', true); return; }
+  const perfil={};
+  ['ivu','retiene','importa','arbitrios','patrono','noretenedor','estimada','patente','propiedad'].forEach(k=>{ perfil[k]=$id('cp_'+k).checked; });
+  const datos={nombre,ein:$id('cl_ein').value.trim(),tipo:$id('cl_tipo').value,cierre:$id('cl_cierre').value,
+    honorario:Number($id('cl_hon').value)||0,contacto:$id('cl_cont').value.trim(),tel:$id('cl_tel').value.trim(),
+    email:$id('cl_email').value.trim(),perfil,estado:$id('cl_estado').value,notas:$id('cl_notas').value.trim()};
+  if(id){ Object.assign(getCli(id),datos); toast('Cliente actualizado — regenera el período si cambiaste el perfil'); }
+  else{ const n=Object.assign({id:uid('c')},datos); state.clientes.push(n); cliId=n.id; currentTab='clientes';
+        const g=generarPeriodo(tabMes); toast('Cliente creado — '+g+' radicación(es) generadas según su perfil'); }
+  saveState(); closeModal(); renderAll();
+}
+
+/* ══════════ DOCUMENTOS ══════════ */
+function renderDocumentos(){
+  const pend=docsPend().sort((a,b)=>a.solicitado<b.solicitado?-1:1);
+  const rec=state.pendientes.filter(p=>p.recibido).sort((a,b)=>a.recibido<b.recibido?1:-1).slice(0,10);
+  let h='<div class="kpis c3">'
+    +kpi(pend.length,'Por recibir',pend.length?'hot':'good')
+    +kpi(new Set(pend.map(p=>p.cliId)).size,'Clientes que deben documentos')
+    +kpi(bloqueadasPorDocs().length,'Radicaciones trancadas',bloqueadasPorDocs().length?'hot':'good')
+    +'</div>';
+  h+='<div class="card"><h2>Documentos por recibir <span class="grow"></span>'
+    +'<button class="btn sm gold" onclick="modalChecklist()">📋 Checklist de temporada</button>'
+    +'<button class="btn sm" onclick="modalDoc(null)">+ Solicitar</button></h2>';
+  if(!pend.length) h+='<div class="empty"><div class="big">✓</div>Tienes todo lo que pediste.</div>';
+  const porCli={};
+  pend.forEach(p=>{ (porCli[p.cliId]=porCli[p.cliId]||[]).push(p); });
+  Object.keys(porCli).forEach(cid=>{
+    const cli=getCli(cid); if(!cli) return;
+    const items=porCli[cid];
+    const dias=Math.abs(diffDias(hoyISO(),items[0].solicitado));
+    const tot=docsDe(cid).length, recCnt=tot-items.length, pct=tot?Math.round(recCnt/tot*100):0;
+    h+='<div class="remitem" style="align-items:flex-start"><div class="ic" style="background:'+(dias>7?'var(--coral-l)':'var(--gold-l)')+'">📄</div>'
+      +'<div class="bd"><div class="n">'+esc(cli.nombre)+' — '+items.length+' documento(s)'+(dias>7?' · <b style="color:var(--coral)">'+dias+' días esperando</b>':'')+'</div>'
+      +'<div class="s">'+items.map(p=>esc(p.item)).join(' · ')+'</div>'
+      +'<div class="s" style="margin-top:5px">Recibidos '+recCnt+' de '+tot
+      +' <span style="display:inline-block;vertical-align:middle;width:120px;height:5px;background:var(--navy-xl);border-radius:99px;margin-left:6px"><span style="display:block;height:5px;width:'+pct+'%;background:var(--ok);border-radius:99px"></span></span></div></div>'
+      +(cli.tel?'<a class="btn xs wa" target="_blank" rel="noopener" href="'+waDocs(cid)+'">Recordar</a>':'')
+      +'<button class="btn xs sec" onclick="verCli(\''+cid+'\')">Ver</button></div>';
+  });
+  h+='</div>';
+  h+='<div class="card"><h2>Recibidos recientemente</h2>';
+  if(!rec.length) h+='<div class="empty">Nada recibido aún.</div>';
+  rec.forEach(p=>{
+    const cli=getCli(p.cliId);
+    h+='<div class="remitem"><div class="ic" style="background:var(--ok-l)">✓</div>'
+      +'<div class="bd"><div class="n">'+esc(cli?cli.nombre:'')+' — '+esc(p.item)+'</div>'
+      +'<div class="s">Recibido '+fmtF(p.recibido)+'</div></div></div>';
+  });
+  h+='</div>';
+  return h;
+}
+function modalChecklist(){
+  const pl=state.config.plantillasDocs||{};
+  let filas='', tot=0;
+  clientesActivos().forEach(c=>{
+    const items=(pl[c.tipo]||[]).filter(it=>!state.pendientes.some(p=>p.cliId===c.id&&p.item===it));
+    if(!items.length) return;
+    tot+=items.length;
+    filas+='<div class="remitem"><div class="ic" style="background:var(--navy-xl)">📋</div>'
+      +'<div class="bd"><div class="n">'+esc(c.nombre)+'</div>'
+      +'<div class="s">'+items.length+' documento(s) según su tipo ('+esc(c.tipo)+')</div></div></div>';
+  });
+  openModal('Checklist de temporada',
+    '<div class="mb"><p class="tiny" style="margin-bottom:10px">Genera de un golpe la lista de documentos que le pides a cada cliente activo para su planilla, según su tipo de entidad. Las plantillas se editan en Config. No duplica lo que ya está pedido.</p>'
+    +(filas||'<div class="empty"><div class="big">✓</div>Todos los clientes ya tienen su checklist generado.</div>')
+    +'</div><div class="mf">'
+    +(filas?'<button class="btn gold" onclick="generarChecklist()">Generar '+tot+' solicitud(es)</button>':'')
+    +'</div>', true);
+}
+function generarChecklist(){
+  const pl=state.config.plantillasDocs||{};
+  let n=0;
+  clientesActivos().forEach(c=>{
+    (pl[c.tipo]||[]).forEach(it=>{
+      if(state.pendientes.some(p=>p.cliId===c.id&&p.item===it)) return;
+      state.pendientes.push({id:uid('p'),cliId:c.id,item:it,solicitado:hoyISO(),recibido:null,notas:'Checklist de temporada'});
+      n++;
+    });
+  });
+  saveState(); closeModal(); renderAll();
+  toast(n?n+' solicitud(es) generadas — ahora a perseguir papeles':'Nada nuevo que pedir');
+}
+function modalDoc(id,cliPre){
+  const p=id?state.pendientes.find(x=>x.id===id):null;
+  const optsC=clientesActivos().map(c=>'<option value="'+c.id+'"'+((p&&p.cliId===c.id)||(cliPre===c.id)?' selected':'')+'>'+esc(c.nombre)+'</option>').join('');
+  const sug=DOCS_COMUNES.map(d=>'<option>'+esc(d)+'</option>').join('');
+  openModal(p?'Editar solicitud':'Solicitar documentos',
+    '<div class="mb"><div class="frow"><div class="fld"><label>Cliente</label><select id="dc_cli">'+optsC+'</select></div>'
+    +'<div class="fld"><label>Fecha de solicitud</label><input type="date" id="dc_fecha" value="'+(p?p.solicitado:hoyISO())+'"></div></div>'
+    +'<div class="fld"><label>Documento</label><input id="dc_item" value="'+(p?esc(p.item):'')+'" list="dc_sug"><datalist id="dc_sug">'+sug+'</datalist></div>'
+    +'<div class="fld"><label>Notas</label><input id="dc_notas" value="'+(p?esc(p.notas):'')+'"></div>'
+    +(p&&p.recibido?'<div class="note">Recibido el '+fmtF(p.recibido)+'</div>':'')
+    +'</div><div class="mf">'
+    +(p?'<button class="btn ghost" style="margin-right:auto;color:var(--coral)" onclick="borrarDoc(\''+p.id+'\')">Eliminar</button>':'')
+    +'<button class="btn" onclick="guardarDoc(\''+(p?p.id:'')+'\')">Guardar</button></div>');
+}
+function guardarDoc(id){
+  const item=$id('dc_item').value.trim();
+  if(!item){ toast('Indica qué documento', true); return; }
+  const datos={cliId:$id('dc_cli').value,item,solicitado:$id('dc_fecha').value,notas:$id('dc_notas').value.trim()};
+  if(id){ Object.assign(state.pendientes.find(x=>x.id===id),datos); }
+  else state.pendientes.push(Object.assign({id:uid('p'),recibido:null},datos));
+  saveState(); closeModal(); renderAll(); toast('Solicitud guardada');
+}
+function marcarRecibido(id){
+  const p=state.pendientes.find(x=>x.id===id); if(!p) return;
+  p.recibido=hoyISO(); saveState(); renderAll(); toast('Marcado como recibido');
+}
+function borrarDoc(id){ askConfirm('¿Eliminar esta solicitud?',()=>{ state.pendientes=state.pendientes.filter(p=>p.id!==id); saveState(); closeModal(); renderAll(); }); }
+
+/* ══════════ TAREAS — cola de trabajo del equipo ══════════
+   Inspirado en los workflow tasks de la competencia: cada persona ve
+   su cola en un solo lugar y lo completado desaparece de la vista.
+   El "flujo de planilla" genera las etapas estándar con fechas
+   escalonadas antes del vencimiento. */
+const FLUJO_PLANILLA=[
+  ['Recopilar documentos del cliente',45],
+  ['Preparar la planilla',21],
+  ['Revisión por otra persona',10],
+  ['Obtener la firma del cliente',5],
+  ['Radicar en SURI y anotar confirmación',0],
+];
+function renderTareas(){
+  const pend=tareasPend().filter(t=>tareaFiltro==='todas'||t.asignado===tareaFiltro)
+    .sort((a,b)=>a.vence<b.vence?-1:1);
+  const todas=tareasPend();
+  const hoy=hoyISO();
+  const atr=todas.filter(t=>t.vence<hoy).length;
+  const deHoy=todas.filter(t=>t.vence===hoy).length;
+  const hechasMes=(state.tareas||[]).filter(t=>t.hecha&&t.hecha.slice(0,7)===mesISO()).length;
+  let h='<div class="kpis">'
+    +kpi(todas.length,'Tareas abiertas')
+    +kpi(atr,'Atrasadas',atr?'hot':'good')
+    +kpi(deHoy,'Vencen hoy',deHoy?'':'good')
+    +kpi(hechasMes,'Completadas este mes','good')
+    +'</div>';
+  h+='<div class="card"><h2>Cola de trabajo <span class="grow"></span>'
+    +'<button class="btn sm" onclick="modalTarea(null)">+ Tarea</button></h2>';
+  h+='<div class="row" style="margin-bottom:12px">'
+    +['todas'].concat(state.config.staff).map(s=>
+      '<button class="btn sm '+(tareaFiltro===s?'':'ghost')+'" onclick="tareaFiltro=\''+esc(s)+'\';renderAll()">'
+      +(s==='todas'?'Todo el equipo':esc(s))+'</button>').join('')
+    +'</div>';
+  h+='<p class="tiny" style="margin-bottom:10px">Cada cual entra y ve lo suyo. Al marcar la palomita, la tarea desaparece de la cola — la meta es verla vacía.</p>';
+  if(!pend.length) h+='<div class="empty"><div class="big">✓</div>Cola vacía'+(tareaFiltro!=='todas'?' para '+esc(tareaFiltro):'')+'. Así se ve el control.</div>';
+  pend.forEach(t=>{
+    const c=t.cliId?getCli(t.cliId):null;
+    const d=diffDias(t.vence,hoy);
+    const cls= d<0?'r': d<=2?'a':'v';
+    h+='<div class="dl"><div class="dd '+cls+'">'+(d<0?Math.abs(d):d)+'<small>'+(d<0?'ATRASO':'DÍAS')+'</small></div>'
+      +'<div class="bd"><div class="n">'+esc(t.titulo)+'</div>'
+      +'<div class="s">'+(c?'<span class="link" onclick="verCli(\''+c.id+'\')">'+esc(c.nombre)+'</span> · ':'')
+      +'vence '+fmtF(t.vence)+(t.asignado?' · <span class="badge b-navy">'+esc(t.asignado)+'</span>':' · <span class="badge b-gray">sin asignar</span>')
+      +(t.notas?' · '+esc(t.notas):'')+'</div></div>'
+      +'<button class="btn xs ok" onclick="completarTarea(\''+t.id+'\')" title="Marcar completada">✓</button>'
+      +'<button class="btn xs sec" onclick="modalTarea(\''+t.id+'\')">Abrir</button></div>';
+  });
+  h+='</div>';
+  const hechas=(state.tareas||[]).filter(t=>t.hecha).sort((a,b)=>a.hecha<b.hecha?1:-1).slice(0,8);
+  if(hechas.length){
+    h+='<div class="card"><h2>Completadas recientemente</h2>';
+    hechas.forEach(t=>{
+      const c=t.cliId?getCli(t.cliId):null;
+      h+='<div class="remitem"><div class="ic" style="background:var(--ok-l)">✓</div>'
+        +'<div class="bd"><div class="n" style="text-decoration:line-through;color:var(--muted)">'+esc(t.titulo)+'</div>'
+        +'<div class="s">'+(c?esc(c.nombre)+' · ':'')+'completada '+fmtF(t.hecha)+(t.hechaPor?' por '+esc(t.hechaPor):'')+'</div></div>'
+        +'<button class="btn xs ghost" onclick="reabrirTarea(\''+t.id+'\')">Reabrir</button></div>';
+    });
+    h+='</div>';
+  }
+  return h;
+}
+function completarTarea(id){
+  const t=state.tareas.find(x=>x.id===id); if(!t) return;
+  t.hecha=hoyISO(); t.hechaPor=isAdmin()?'Socio':'Staff';
+  saveState(); renderAll(); toast('✓ '+t.titulo);
+}
+function reabrirTarea(id){
+  const t=state.tareas.find(x=>x.id===id); if(!t) return;
+  t.hecha=null; t.hechaPor='';
+  saveState(); renderAll(); toast('Tarea reabierta');
+}
+function modalTarea(id,cliPre,radPre,tituloPre){
+  const t=id?state.tareas.find(x=>x.id===id):null;
+  const optsC='<option value="">— sin cliente —</option>'+clientesActivos().map(c=>'<option value="'+c.id+'"'+((t&&t.cliId===c.id)||(cliPre===c.id)?' selected':'')+'>'+esc(c.nombre)+'</option>').join('');
+  const optsA='<option value="">— sin asignar —</option>'+state.config.staff.map(s=>'<option'+(t&&t.asignado===s?' selected':'')+'>'+esc(s)+'</option>').join('');
+  openModal(t?'Editar tarea':'Nueva tarea',
+    '<div class="mb">'
+    +'<div class="fld"><label>Qué hay que hacer</label><input id="ta_tit" value="'+esc(t?t.titulo:(tituloPre||''))+'"></div>'
+    +'<div class="frow3">'
+    +'<div class="fld"><label>Cliente (opcional)</label><select id="ta_cli">'+optsC+'</select></div>'
+    +'<div class="fld"><label>Asignada a</label><select id="ta_asig">'+optsA+'</select></div>'
+    +'<div class="fld"><label>Vence</label><input type="date" id="ta_vence" value="'+(t?t.vence:hoyISO())+'"></div>'
+    +'</div>'
+    +'<div class="fld"><label>Notas</label><input id="ta_notas" value="'+esc(t?t.notas:'')+'"></div>'
+    +'<input type="hidden" id="ta_rad" value="'+esc((t&&t.radId)||radPre||'')+'">'
+    +'</div><div class="mf">'
+    +(t?'<button class="btn ghost" style="margin-right:auto;color:var(--coral)" onclick="borrarTarea(\''+t.id+'\')">Eliminar</button>':'')
+    +'<button class="btn" onclick="guardarTarea(\''+(t?t.id:'')+'\')">Guardar</button></div>');
+}
+function guardarTarea(id){
+  const titulo=$id('ta_tit').value.trim();
+  if(!titulo){ toast('Escribe qué hay que hacer', true); return; }
+  const datos={titulo,cliId:$id('ta_cli').value||null,asignado:$id('ta_asig').value,
+    vence:$id('ta_vence').value||hoyISO(),notas:$id('ta_notas').value.trim(),radId:$id('ta_rad').value||null};
+  if(id){ Object.assign(state.tareas.find(x=>x.id===id),datos); }
+  else state.tareas.push(Object.assign({id:uid('k'),creado:hoyISO(),creadoPor:isAdmin()?'Socio':'Staff',hecha:null,hechaPor:''},datos));
+  saveState(); closeModal(); renderAll(); toast('Tarea guardada');
+}
+function borrarTarea(id){ askConfirm('¿Eliminar esta tarea?',()=>{ state.tareas=state.tareas.filter(t=>t.id!==id); saveState(); closeModal(); renderAll(); }); }
+function tareaDesdeRad(radId){
+  const r=state.radicaciones.find(x=>x.id===radId); if(!r) return;
+  const obl=getObl(r.oblId);
+  modalTarea(null,r.cliId,r.id,((obl&&obl.forma)||'')+' '+etiquetaPeriodo(r.periodo)+': ');
+}
+function generarFlujoPlanilla(radId){
+  const r=state.radicaciones.find(x=>x.id===radId); if(!r) return;
+  const cli=getCli(r.cliId), obl=getObl(r.oblId);
+  const etiqueta=((obl&&obl.forma)||'')+' '+etiquetaPeriodo(r.periodo);
+  const nuevas=FLUJO_PLANILLA.filter(par=>!state.tareas.some(t=>t.radId===r.id&&t.titulo.indexOf(par[0])===0));
+  if(!nuevas.length){ toast('El flujo de esta planilla ya está generado'); return; }
+  nuevas.forEach(par=>{
+    state.tareas.push({id:uid('k'),titulo:par[0]+' — '+etiqueta,cliId:r.cliId,radId:r.id,
+      asignado:r.asignado||'',vence:addDias(r.vence,-par[1]),creado:hoyISO(),
+      creadoPor:isAdmin()?'Socio':'Staff',hecha:null,hechaPor:'',notas:(cli?cli.nombre:'')});
+  });
+  saveState(); closeModal(); renderAll();
+  toast(nuevas.length+' tareas creadas — el flujo completo de '+etiqueta);
+}
+
+/* ══════════ TIEMPO ══════════ */
+function renderTiempo(){
+  const m=finMes;
+  const ts=state.tiempo.filter(t=>t.fecha.slice(0,7)===m&&(tiempoQuien==='todos'||t.quien===tiempoQuien))
+    .sort((a,b)=>a.fecha<b.fecha?1:-1);
+  const total=ts.reduce((s,t)=>s+t.minutos,0);
+  const fact=ts.filter(t=>t.facturable).reduce((s,t)=>s+t.minutos,0);
+  const pct= total? Math.round(fact/total*100) : 0;
+  /* rentabilidad por cliente: honorario vs horas invertidas */
+  const porCli={};
+  state.tiempo.filter(t=>t.fecha.slice(0,7)===m).forEach(t=>{ porCli[t.cliId]=(porCli[t.cliId]||0)+t.minutos; });
+  const optsQ='<option value="todos">Todo el equipo</option>'+state.config.staff.map(s=>'<option'+(tiempoQuien===s?' selected':'')+'>'+esc(s)+'</option>').join('');
+  let h='<div class="card"><h2>Tiempo <span class="grow"></span>'
+    +'<select onchange="tiempoQuien=this.value;renderAll()" style="padding:7px 10px;border:1.5px solid var(--line-d);border-radius:8px;font-weight:600">'+optsQ+'</select>'
+    +'<input type="month" value="'+m+'" onchange="finMes=this.value;renderAll()" style="padding:7px 10px;border:1.5px solid var(--line-d);border-radius:8px;font-weight:600">'
+    +'<button class="btn sm" onclick="modalTiempo(null)">+ Entrada</button></h2>';
+  h+='<div class="kpis c3">'
+    +kpi(hhmm(total),'Horas del mes')
+    +kpi(hhmm(fact),'Facturables','good')
+    +kpi(pct+'%','Aprovechamiento',pct>=70?'good':pct>=55?'':'hot')
+    +'</div></div>';
+  if(isAdmin()){
+    h+='<div class="card"><h2>Rentabilidad por cliente — '+fmtMes(m)+'</h2>'
+      +'<p class="tiny" style="margin-bottom:10px">Compara el honorario que cobras contra las horas que de verdad inviertes, a tu tarifa de '+money(state.config.tarifaHora)+'/hora. Aquí es donde descubres al cliente que te está costando dinero.</p>';
+    h+='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Cliente</th><th class="num">Horas</th><th class="num">Costo a tarifa</th><th class="num">Honorario</th><th class="num">Margen</th></tr></thead><tbody>';
+    Object.keys(porCli).sort((a,b)=>porCli[b]-porCli[a]).forEach(cid=>{
+      const c=getCli(cid); if(!c) return;
+      const min=porCli[cid];
+      const costo=Math.round(min/60*state.config.tarifaHora*100)/100;
+      const margen=Math.round((c.honorario-costo)*100)/100;
+      h+='<tr class="click" onclick="verCli(\''+cid+'\')"><td><b>'+esc(c.nombre)+'</b></td>'
+        +'<td class="num">'+hhmm(min)+'</td><td class="num money">'+money(costo)+'</td>'
+        +'<td class="num money">'+money(c.honorario)+'</td>'
+        +'<td class="num money" style="color:'+(margen<0?'var(--coral)':'var(--ok)')+';font-weight:800">'+money(margen)+'</td></tr>';
+    });
+    h+='</tbody></table></div>'
+      +'<p class="tiny" style="margin-top:6px">Margen en rojo = ese cliente consume más de lo que paga. Es la conversación de renegociación que llevas dos años posponiendo.</p></div>';
+  }
+  h+='<div class="card"><h2>Entradas de '+fmtMes(m)+'</h2>';
+  if(!ts.length) h+='<div class="empty">Sin tiempo registrado.</div>';
+  else{
+    h+='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Cliente</th><th>Concepto</th><th>Quién</th><th class="num">Tiempo</th><th></th></tr></thead><tbody>';
+    ts.forEach(t=>{
+      const c=getCli(t.cliId);
+      h+='<tr><td>'+fmtCorta(t.fecha)+'</td><td>'+esc(c?c.nombre:'')+'</td>'
+        +'<td class="tiny">'+esc(t.concepto)+(t.facturable?'':' <span class="badge b-gray">no facturable</span>')+'</td>'
+        +'<td class="tiny">'+esc(t.quien)+'</td><td class="num">'+hhmm(t.minutos)+'</td>'
+        +'<td class="num"><button class="btn xs sec" onclick="modalTiempo(\''+t.id+'\')">Editar</button></td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  h+='</div>';
+  return h;
+}
+function modalTiempo(id,cliPre){
+  const t=id?state.tiempo.find(x=>x.id===id):null;
+  const optsC=clientesActivos().map(c=>'<option value="'+c.id+'"'+((t&&t.cliId===c.id)||(cliPre===c.id)?' selected':'')+'>'+esc(c.nombre)+'</option>').join('');
+  const optsQ=state.config.staff.map(s=>'<option'+(t&&t.quien===s?' selected':'')+'>'+esc(s)+'</option>').join('');
+  openModal(t?'Editar tiempo':'Registrar tiempo',
+    '<div class="mb"><div class="frow3">'
+    +'<div class="fld"><label>Cliente</label><select id="tm_cli">'+optsC+'</select></div>'
+    +'<div class="fld"><label>Fecha</label><input type="date" id="tm_fecha" value="'+(t?t.fecha:hoyISO())+'"></div>'
+    +'<div class="fld"><label>Minutos</label><input type="number" id="tm_min" value="'+(t?t.minutos:30)+'" step="5"></div>'
+    +'</div><div class="frow">'
+    +'<div class="fld"><label>Quién</label><select id="tm_quien">'+optsQ+'</select></div>'
+    +'<div class="fld"><label>¿Facturable?</label><select id="tm_fact"><option value="1"'+(!t||t.facturable?' selected':'')+'>Sí</option><option value="0"'+(t&&!t.facturable?' selected':'')+'>No</option></select></div>'
+    +'</div><div class="fld"><label>Concepto</label><input id="tm_conc" value="'+(t?esc(t.concepto):'')+'"></div>'
+    +'</div><div class="mf">'
+    +(t?'<button class="btn ghost" style="margin-right:auto;color:var(--coral)" onclick="borrarTiempo(\''+t.id+'\')">Eliminar</button>':'')
+    +'<button class="btn" onclick="guardarTiempo(\''+(t?t.id:'')+'\')">Guardar</button></div>');
+}
+function guardarTiempo(id){
+  const min=Number($id('tm_min').value);
+  if(!(min>0)){ toast('Minutos inválidos', true); return; }
+  const datos={cliId:$id('tm_cli').value,fecha:$id('tm_fecha').value,minutos:min,quien:$id('tm_quien').value,
+    concepto:$id('tm_conc').value.trim(),facturable:$id('tm_fact').value==='1'};
+  if(id){ Object.assign(state.tiempo.find(x=>x.id===id),datos); } else state.tiempo.push(Object.assign({id:uid('t')},datos));
+  saveState(); closeModal(); renderAll(); toast('Tiempo registrado');
+}
+function borrarTiempo(id){ askConfirm('¿Eliminar esta entrada?',()=>{ state.tiempo=state.tiempo.filter(t=>t.id!==id); saveState(); closeModal(); renderAll(); }); }
+
+/* ══════════ FACTURACIÓN ══════════ */
+let factTempLineas=[];
+function renderFacturacion(){
+  const m=finMes;
+  const fs=state.facturas.filter(f=>f.fecha.slice(0,7)===m);
+  const facturado=fs.reduce((s,f)=>s+totalFactura(f),0);
+  const cobrado=state.facturas.flatMap(f=>(f.pagos||[])).filter(p=>p.fecha.slice(0,7)===m).reduce((s,p)=>s+p.monto,0);
+  const pc=porCobrar();
+  const totalPC=pc.reduce((s,f)=>s+balanceFactura(f),0);
+  const retTotal=fs.reduce((s,f)=>s+retencionFactura(f),0);
+  let h='<div class="card"><h2>Facturación <span class="grow"></span>'
+    +'<input type="month" value="'+m+'" onchange="finMes=this.value;renderAll()" style="padding:7px 10px;border:1.5px solid var(--line-d);border-radius:8px;font-weight:600">'
+    +'<button class="btn sm sec" onclick="facturarMes()">Facturar honorarios del mes</button>'
+    +'<button class="btn sm" onclick="modalFactura(null)">+ Factura</button></h2>';
+  h+='<div class="kpis">'
+    +kpi(money(facturado),'Facturado '+fmtMes(m),'good')
+    +kpi(money(cobrado),'Cobrado en el mes','good')
+    +kpi(money(totalPC),'Por cobrar',totalPC>0?'hot':'good')
+    +kpi(money(retTotal),'Retenido por clientes')
+    +'</div>';
+  h+='<p class="tiny">La retención en el origen no se pierde: es contribución tuya adelantada que acreditas en tu planilla. El sistema la separa para que sepas por qué el depósito nunca cuadra con la factura.</p></div>';
+  /* antigüedad de cuentas por cobrar */
+  if(pc.length){
+    const tramos={'0-30':0,'31-60':0,'61-90':0,'90+':0};
+    pc.forEach(f=>{ const d=antiguedad(f);
+      if(d<=30) tramos['0-30']+=balanceFactura(f);
+      else if(d<=60) tramos['31-60']+=balanceFactura(f);
+      else if(d<=90) tramos['61-90']+=balanceFactura(f);
+      else tramos['90+']+=balanceFactura(f); });
+    h+='<div class="card"><h2>Antigüedad de cuentas por cobrar</h2><div class="kpis">'
+      +kpi(money(tramos['0-30']),'0–30 días','good')
+      +kpi(money(tramos['31-60']),'31–60 días')
+      +kpi(money(tramos['61-90']),'61–90 días',tramos['61-90']>0?'hot':'')
+      +kpi(money(tramos['90+']),'Más de 90 días',tramos['90+']>0?'hot':'')
+      +'</div>';
+    h+='<div class="tbl-wrap" style="margin-top:12px"><table class="tbl"><thead><tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th class="num">Total</th><th class="num">Balance</th><th>Días</th><th></th></tr></thead><tbody>';
+    pc.sort((a,b)=>antiguedad(b)-antiguedad(a)).forEach(f=>{
+      const c=getCli(f.cliId), d=antiguedad(f);
+      h+='<tr class="click" onclick="modalFactura(\''+f.id+'\')"><td><b>#'+f.num+'</b></td><td>'+esc(c?c.nombre:'')+'</td>'
+        +'<td>'+fmtCorta(f.fecha)+'</td><td class="num money">'+money(totalFactura(f))+'</td>'
+        +'<td class="num money" style="color:var(--coral);font-weight:700">'+money(balanceFactura(f))+'</td>'
+        +'<td>'+d+'</td>'
+        +'<td class="num">'+(c&&c.tel?'<a class="btn xs wa" target="_blank" rel="noopener" onclick="event.stopPropagation()" href="'+waCobro(f)+'">Recordar</a>':'')+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+  }
+  h+='<div class="card"><h2>Facturas de '+fmtMes(m)+'</h2>';
+  if(!fs.length) h+='<div class="empty">Sin facturas este mes.</div>';
+  fs.slice().sort((a,b)=>a.num<b.num?1:-1).forEach(f=>{
+    const c=getCli(f.cliId), bal=balanceFactura(f);
+    h+='<div class="remitem"><div class="ic" style="background:'+(bal>0?'var(--gold-l)':'var(--ok-l)')+'">#'+f.num+'</div>'
+      +'<div class="bd"><div class="n">'+esc(c?c.nombre:'')+' — '+money(totalFactura(f))+(bal>0?' · debe '+money(bal):' · pagada ✓')+'</div>'
+      +'<div class="s">'+fmtF(f.fecha)+' · '+esc((f.lineas[0]||{}).concepto||'')+(f.retencion?' · retención '+money(retencionFactura(f))+' (a cobrar '+money(aCobrarFactura(f))+')':'')+'</div></div>'
+      +'<button class="btn xs ghost" onclick="printFactura(\''+f.id+'\')">🖨️</button>'
+      +'<button class="btn xs sec" onclick="modalFactura(\''+f.id+'\')">Abrir</button></div>';
+  });
+  h+='</div>';
+  return h;
+}
+function facturarMes(){
+  const m=finMes;
+  const faltan=clientesActivos().filter(c=>c.honorario>0&&!state.facturas.some(f=>f.cliId===c.id&&f.fecha.slice(0,7)===m&&(f.lineas||[]).some(l=>l.concepto.indexOf('honorario')>=0||l.concepto.indexOf('contabilidad mensual')>=0)));
+  if(!faltan.length){ toast('Ya facturaste los honorarios de todos en '+fmtMes(m)); return; }
+  askConfirm('Generar '+faltan.length+' factura(s) de honorario mensual para '+fmtMes(m)+'?',()=>{
+    faltan.forEach(c=>{
+      state.facturas.push({id:uid('f'),cliId:c.id,num:proxNum('proxFactura'),fecha:m+'-01',
+        lineas:[{concepto:'Servicios de contabilidad mensual — '+fmtMes(m),cant:1,precio:c.honorario}],
+        exentoIVU:false,retencion:true,pagos:[],notas:''});
+    });
+    saveState(); closeModal(); renderAll();
+    toast(faltan.length+' factura(s) generadas');
+  });
+}
+function waCobro(f){
+  const c=getCli(f.cliId);
+  const msg='Saludos '+(c.contacto||'').split(' ')[0]+', le escribe '+state.config.firma.nombre+'.\n\nRecordatorio de la factura #'+f.num+' del '+fmtF(f.fecha)+':\n'
+    +'Subtotal: '+money(subFactura(f))+(ivuFactura(f)?'\nIVU: '+money(ivuFactura(f)):'')
+    +(retencionFactura(f)?'\nMenos retención en el origen: '+money(retencionFactura(f)):'')
+    +'\n*Balance: '+money(balanceFactura(f))+'*\n\nGracias por su atención.';
+  return waLink(c.tel,msg);
+}
+function modalFactura(id,cliPre){
+  const f=id?state.facturas.find(x=>x.id===id):null;
+  factTempLineas= f? (f.lineas||[]).map(l=>Object.assign({},l)) : [{concepto:'Servicios de contabilidad mensual',cant:1,precio:0}];
+  const optsC=clientesActivos().map(c=>'<option value="'+c.id+'"'+((f&&f.cliId===c.id)||(cliPre===c.id)?' selected':'')+'>'+esc(c.nombre)+'</option>').join('');
+  openModal(f?('Factura #'+f.num):'Nueva factura',
+    '<div class="mb"><div class="frow3">'
+    +'<div class="fld"><label>Cliente</label><select id="fc_cli" onchange="factResumen()">'+optsC+'</select></div>'
+    +'<div class="fld"><label>Fecha</label><input type="date" id="fc_fecha" value="'+(f?f.fecha:hoyISO())+'"></div>'
+    +'<div class="fld"><label>IVU</label><select id="fc_ivu" onchange="factResumen()"><option value="0"'+(f&&f.exentoIVU?'':' selected')+'>Aplica '+state.config.ivu.pct+'%</option><option value="1"'+(f&&f.exentoIVU?' selected':'')+'>Exenta</option></select></div>'
+    +'</div>'
+    +'<div class="fld"><label>Conceptos</label><div id="fc_lineas"></div>'
+    +'<div class="row" style="margin-top:6px"><button class="btn sm sec" onclick="factAddLinea()">+ Línea</button>'
+    +'<button class="btn sm ghost" onclick="factDesdeTiempo()">Traer del tiempo del mes</button></div></div>'
+    +'<div class="chkline"><input type="checkbox" id="fc_ret" '+(!f||f.retencion?'checked':'')+' onchange="factResumen()"> <b>El cliente retiene en el origen ('+state.config.retencionPct+'%)</b> <span class="tiny">Marca esto si tu cliente es comerciante y te retiene por servicios profesionales.</span></div>'
+    +'<div id="fc_resumen" class="note" style="font-size:13px;margin-top:10px"></div>'
+    +'<div class="fld" style="margin-top:10px"><label>Notas</label><input id="fc_notas" value="'+(f?esc(f.notas):'')+'"></div>'
+    +'</div><div class="mf" style="justify-content:space-between"><div class="row">'
+    +(f?'<button class="btn ghost sm" onclick="printFactura(\''+f.id+'\')">🖨️ Imprimir</button>':'')
+    +(f&&getCli(f.cliId)&&getCli(f.cliId).tel?'<a class="btn ghost sm" target="_blank" rel="noopener" href="'+waCobro(f)+'">📲 Enviar</a>':'')
+    +'</div><div class="row">'
+    +(f&&balanceFactura(f)>0?'<button class="btn ok sm" onclick="modalPagoFact(\''+f.id+'\')">Cobrar '+money(balanceFactura(f))+'</button>':'')
+    +'<button class="btn" onclick="guardarFactura(\''+(f?f.id:'')+'\')">Guardar</button>'
+    +'</div></div>', true);
+  factRenderLineas();
+}
+function factRenderLineas(){
+  const box=$id('fc_lineas'); if(!box) return;
+  let h='';
+  factTempLineas.forEach((l,ix)=>{
+    h+='<div class="row" style="margin-bottom:6px;gap:8px;align-items:center">'
+      +'<input value="'+esc(l.concepto)+'" style="flex:1;padding:6px;border:1.5px solid var(--line-d);border-radius:7px;font-size:13px" onchange="factTempLineas['+ix+'].concepto=this.value;factResumen()">'
+      +'<input type="number" value="'+l.cant+'" style="width:60px;padding:6px;border:1.5px solid var(--line-d);border-radius:7px" onchange="factTempLineas['+ix+'].cant=Number(this.value)||1;factResumen()">'
+      +'<input type="number" step="0.01" value="'+l.precio+'" style="width:95px;padding:6px;border:1.5px solid var(--line-d);border-radius:7px" onchange="factTempLineas['+ix+'].precio=Number(this.value)||0;factResumen()">'
+      +'<button class="btn xs ghost" style="color:var(--coral)" onclick="factTempLineas.splice('+ix+',1);factRenderLineas()">×</button></div>';
+  });
+  box.innerHTML=h;
+  factResumen();
+}
+function factAddLinea(){ factTempLineas.push({concepto:'',cant:1,precio:0}); factRenderLineas(); }
+function factDesdeTiempo(){
+  const cid=$id('fc_cli').value;
+  const fecha=$id('fc_fecha').value||hoyISO();
+  let m=fecha.slice(0,7);
+  let min=minutosFacturables(cid,m);
+  /* Se factura a principios de mes el trabajo del mes que cerró: si el mes
+     de la factura está vacío, ofrecemos el anterior en vez de decir "no hay". */
+  if(!min){
+    const ant=mesRelDe(m,-1);
+    const minAnt=minutosFacturables(cid,ant);
+    if(minAnt){ m=ant; min=minAnt; }
+  }
+  if(!min){ toast('No hay tiempo facturable de ese cliente en '+fmtMes(fecha.slice(0,7))+' ni en el mes anterior', true); return; }
+  const horas=Math.round(min/60*100)/100;
+  factTempLineas.push({concepto:'Servicios profesionales — '+hhmm(min)+' en '+fmtMes(m),cant:horas,precio:state.config.tarifaHora});
+  factRenderLineas();
+  toast(hhmm(min)+' de '+fmtMes(m)+' añadidos a '+money(state.config.tarifaHora)+'/hora');
+}
+function factResumen(){
+  const sub=factTempLineas.reduce((s,l)=>s+l.cant*l.precio,0);
+  const exenta=$id('fc_ivu')&&$id('fc_ivu').value==='1';
+  const ivu=(state.config.ivu.activo&&!exenta)?Math.round(sub*state.config.ivu.pct)/100:0;
+  const ret=($id('fc_ret')&&$id('fc_ret').checked)?Math.round(sub*state.config.retencionPct)/100:0;
+  const box=$id('fc_resumen');
+  if(box) box.innerHTML='Subtotal '+money(sub)+(ivu?' + IVU '+state.config.ivu.pct+'%: '+money(ivu):' <span class="tiny">(exenta de IVU)</span>')
+    +' · <b>Total facturado '+money(sub+ivu)+'</b>'
+    +(ret?'<br>Menos retención en el origen '+state.config.retencionPct+'%: −'+money(ret)+' · <b>A recibir: '+money(sub+ivu-ret)+'</b>'
+        +'<br><span class="tiny">La retención la remite el cliente a Hacienda a tu nombre y la acreditas en tu planilla.</span>':'');
+}
+function guardarFactura(id){
+  const lineas=factTempLineas.filter(l=>l.concepto.trim()&&l.precio>0);
+  if(!lineas.length){ toast('Añade al menos una línea con concepto y precio', true); return; }
+  const datos={cliId:$id('fc_cli').value,fecha:$id('fc_fecha').value,lineas,
+    exentoIVU:$id('fc_ivu').value==='1',retencion:$id('fc_ret').checked,notas:$id('fc_notas').value.trim()};
+  if(id){ Object.assign(state.facturas.find(x=>x.id===id),datos); toast('Factura actualizada'); }
+  else{ const n=Object.assign({id:uid('f'),num:proxNum('proxFactura'),pagos:[]},datos); state.facturas.push(n); toast('Factura #'+n.num+' creada'); }
+  saveState(); closeModal(); renderAll();
+}
+function modalPagoFact(id){
+  const f=state.facturas.find(x=>x.id===id); if(!f) return;
+  const optsM=METODOS_PAGO.map(m=>'<option>'+m+'</option>').join('');
+  openModal('Registrar pago — factura #'+f.num,
+    '<div class="mb"><table class="tbl" style="margin-bottom:12px"><tbody>'
+    +'<tr><td>Total facturado</td><td class="num money">'+money(totalFactura(f))+'</td></tr>'
+    +(retencionFactura(f)?'<tr><td>Retención en el origen ('+state.config.retencionPct+'%)</td><td class="num money">−'+money(retencionFactura(f))+'</td></tr>':'')
+    +'<tr><th>A recibir del cliente</th><th class="num money">'+money(aCobrarFactura(f))+'</th></tr>'
+    +'<tr><td>Pagado</td><td class="num money">−'+money(pagadoFactura(f))+'</td></tr>'
+    +'<tr><th>Balance</th><th class="num money">'+money(balanceFactura(f))+'</th></tr></tbody></table>'
+    +'<div class="frow3"><div class="fld"><label>Monto</label><input type="number" id="pf_monto" step="0.01" value="'+balanceFactura(f).toFixed(2)+'"></div>'
+    +'<div class="fld"><label>Fecha</label><input type="date" id="pf_fecha" value="'+hoyISO()+'"></div>'
+    +'<div class="fld"><label>Método</label><select id="pf_met">'+optsM+'</select></div></div>'
+    +'<div class="fld"><label>Nota</label><input id="pf_nota" placeholder="Ej. incluye comprobante de retención"></div>'
+    +'</div><div class="mf"><button class="btn ok" onclick="guardarPagoFact(\''+id+'\')">Registrar</button></div>');
+}
+function guardarPagoFact(id){
+  const f=state.facturas.find(x=>x.id===id); if(!f) return;
+  const monto=Number($id('pf_monto').value);
+  if(!monto){ toast('Monto inválido', true); return; }
+  f.pagos.push({fecha:$id('pf_fecha').value,monto,metodo:$id('pf_met').value,nota:$id('pf_nota').value.trim()});
+  saveState(); closeModal(); renderAll(); toast('Pago registrado');
+}
+
+/* ══════════ CONFIG ══════════ */
+function renderConfig(){
+  const c=state.config;
+  let h=AVISO;
+  h+='<div class="grid2">';
+  h+='<div class="card"><h2>Firma</h2>'
+    +'<div class="fld"><label>Nombre</label><input id="cf_nom" value="'+esc(c.firma.nombre)+'"></div>'
+    +'<div class="frow"><div class="fld"><label>Licencia / registro</label><input id="cf_lic" value="'+esc(c.firma.lic)+'"></div>'
+    +'<div class="fld"><label>Teléfono</label><input id="cf_tel" value="'+esc(c.firma.tel)+'"></div></div>'
+    +'<div class="fld"><label>Dirección</label><input id="cf_dir" value="'+esc(c.firma.dir)+'"></div>'
+    +'<div class="frow3"><div class="fld"><label>Aviso previo (días)</label><input type="number" id="cf_aviso" value="'+c.avisoDias+'"></div>'
+    +'<div class="fld"><label>Tarifa por hora</label><input type="number" id="cf_tarifa" step="0.01" value="'+c.tarifaHora+'"></div>'
+    +'<div class="fld"><label>Próxima factura #</label><input type="number" id="cf_fact" value="'+c.proxFactura+'"></div></div>'
+    +'<div class="frow3"><div class="fld"><label>¿Cobras IVU?</label><select id="cf_ivuact"><option value="1"'+(c.ivu.activo?' selected':'')+'>Sí</option><option value="0"'+(!c.ivu.activo?' selected':'')+'>No</option></select></div>'
+    +'<div class="fld"><label>IVU %</label><input type="number" id="cf_ivupct" step="0.5" value="'+c.ivu.pct+'"></div>'
+    +'<div class="fld"><label>Retención en origen %</label><input type="number" id="cf_ret" step="0.5" value="'+c.retencionPct+'"></div></div>'
+    +'<p class="tiny">Los servicios profesionales prestados a otro comerciante tienen tratamiento especial de IVU en PR, y la retención en el origen por servicios tiene su propio porciento y sus excepciones (relevos, negocios nuevos). Configura ambos según tu situación real.</p>'
+    +'<div class="fld"><label>Personal (separado por coma)</label><input id="cf_staff" value="'+esc(c.staff.join(', '))+'"></div>'
+    +'<div class="frow"><div class="fld"><label>Vence licencia / registro</label><input type="date" id="cf_licv" value="'+esc(c.firma.licVence||'')+'"></div>'
+    +'<div class="fld"><label>Límite educación continua</label><input type="date" id="cf_educv" value="'+esc(c.firma.educVence||'')+'"></div></div>'
+    +'<p class="tiny">La pestaña Hoy te avisa 60 días antes de estas fechas. El registro del especialista y las horas de educación continua también vencen — y a ti nadie te lo recuerda.</p>'
+    +'<button class="btn sm" onclick="guardarConfigFirma()">Guardar</button></div>';
+  h+='<div class="card"><h2>Catálogo de obligaciones</h2>'
+    +'<p class="tiny" style="margin-bottom:10px">Estas son las obligaciones que el sistema genera automáticamente según el perfil de cada cliente. Ajusta los días de vencimiento a la realidad vigente y añade lo que tu práctica maneje.</p>'
+    +'<div style="max-height:340px;overflow-y:auto">';
+  c.obligaciones.forEach(o=>{
+    const cuantos=clientesActivos().filter(cl=>aplicaA(cl,o)).length;
+    h+='<div class="remitem"><div class="bd"><div class="n">'+esc(o.forma)+' — '+esc(o.nombre)+'</div>'
+      +'<div class="s">'+esc(o.frec)+(o.dia?' · día '+o.dia:'')+' · aplica a '+cuantos+' cliente(s)</div></div>'
+      +'<button class="btn xs sec" onclick="modalObl(\''+o.id+'\')">Editar</button></div>';
+  });
+  h+='</div></div>';
+  h+='<div class="card"><h2>Checklist de temporada</h2>'
+    +'<p class="tiny" style="margin-bottom:10px">Lo que le pides a cada cliente para su planilla, según su tipo de entidad. Una línea por documento. El botón "Checklist de temporada" en Documentos genera las solicitudes usando estas listas.</p>'
+    +'<div style="max-height:340px;overflow-y:auto">';
+  TIPOS_CLIENTE.forEach((t,ix)=>{
+    h+='<div class="fld"><label>'+esc(t)+'</label><textarea id="cf_pl_'+ix+'" style="min-height:74px;font-size:12.5px">'+esc(((c.plantillasDocs||{})[t]||[]).join('\n'))+'</textarea></div>';
+  });
+  h+='</div><button class="btn sm" onclick="guardarPlantillas()">Guardar plantillas</button></div>';
+  h+='<div class="card"><h2>Respaldo</h2><div class="row">'
+    +'<button class="btn sm sec" onclick="exportarJSON()">⬇️ Exportar todo</button>'
+    +'<label class="btn sm ghost" style="cursor:pointer">⬆️ Importar<input type="file" accept=".json" style="display:none" onchange="importarJSON(this)"></label>'
+    +'<button class="btn sm warn" onclick="resetDemo()">Restaurar demo</button></div>'
+    +'<div class="frow" style="margin-top:12px"><div class="fld"><label>PIN Socio</label><input id="cf_pinA" maxlength="4" value="'+esc(c.pins.admin)+'"></div>'
+    +'<div class="fld"><label>PIN Staff</label><input id="cf_pinS" maxlength="4" value="'+esc(c.pins.staff)+'"></div></div>'
+    +'<button class="btn sm" onclick="guardarPins()">Guardar PINs</button>'
+    +'<p class="tiny" style="margin-top:10px">El rol Staff ve clientes, tablero, documentos y tiempo — sin acceso a facturación ni configuración. Exporta con regularidad: ese archivo es tu práctica completa.</p></div>';
+  h+='</div>';
+  return h;
+}
+function guardarConfigFirma(){
+  const c=state.config;
+  c.firma={nombre:$id('cf_nom').value.trim(),lic:$id('cf_lic').value.trim(),dir:$id('cf_dir').value.trim(),
+           tel:$id('cf_tel').value.trim(),email:c.firma.email,
+           licVence:$id('cf_licv').value,educVence:$id('cf_educv').value};
+  c.avisoDias=Number($id('cf_aviso').value)||10;
+  c.tarifaHora=Number($id('cf_tarifa').value)||85;
+  c.proxFactura=Number($id('cf_fact').value)||c.proxFactura;
+  c.ivu={activo:$id('cf_ivuact').value==='1',pct:Number($id('cf_ivupct').value)||0};
+  c.retencionPct=Number($id('cf_ret').value)||0;
+  c.staff=$id('cf_staff').value.split(',').map(s=>s.trim()).filter(Boolean);
+  saveState(); renderAll(); toast('Configuración guardada');
+}
+function modalObl(id){
+  const o=getObl(id); if(!o) return;
+  openModal('Obligación — '+o.forma,
+    '<div class="mb"><div class="frow"><div class="fld"><label>Forma</label><input id="ob_forma" value="'+esc(o.forma)+'"></div>'
+    +'<div class="fld"><label>Día de vencimiento</label><input type="number" id="ob_dia" value="'+(o.dia||15)+'"></div></div>'
+    +'<div class="fld"><label>Nombre</label><input id="ob_nom" value="'+esc(o.nombre)+'"></div>'
+    +'<div class="fld"><label>Nota que ve tu equipo</label><input id="ob_nota" value="'+esc(o.nota||'')+'"></div>'
+    +'<p class="tiny">Frecuencia: <b>'+esc(o.frec)+'</b> · aplica al perfil <b>'+esc(o.aplica)+'</b>. Cambiar el día no mueve las radicaciones ya generadas; usa "Posponer" en cada una para eso.</p>'
+    +'</div><div class="mf"><button class="btn" onclick="guardarObl(\''+id+'\')">Guardar</button></div>');
+}
+function guardarObl(id){
+  const o=getObl(id); if(!o) return;
+  o.forma=$id('ob_forma').value.trim(); o.nombre=$id('ob_nom').value.trim();
+  o.dia=Number($id('ob_dia').value)||o.dia; o.nota=$id('ob_nota').value.trim();
+  saveState(); closeModal(); renderAll(); toast('Obligación actualizada');
+}
+function guardarPlantillas(){
+  const pl={};
+  TIPOS_CLIENTE.forEach((t,ix)=>{ pl[t]=$id('cf_pl_'+ix).value.split('\n').map(s=>s.trim()).filter(Boolean); });
+  state.config.plantillasDocs=pl;
+  saveState(); toast('Plantillas guardadas');
+}
+function guardarPins(){
+  const a=$id('cf_pinA').value.trim(), s=$id('cf_pinS').value.trim();
+  if(a.length!==4||s.length!==4){ toast('Los PINs deben tener 4 dígitos', true); return; }
+  state.config.pins={admin:a,staff:s};
+  saveState(); toast('PINs actualizados');
+}
+function exportarJSON(){
+  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download='norte_contable_'+hoyISO()+'.json'; a.click();
+  toast('Respaldo exportado');
+}
+function importarJSON(inp){
+  const f=inp.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ const d=JSON.parse(r.result); if(!d.clientes) throw new Error('formato');
+    state=d; saveState(); renderAll(); toast('Respaldo importado'); }catch(e){ toast('Archivo inválido', true); } };
+  r.readAsText(f);
+}
+function resetDemo(){ askConfirm('Esto borra todo y restaura la demo. ¿Continuar?',()=>{ state=seedState(); saveState(); closeModal(); renderAll(); toast('Demo restaurada'); }); }
+
+/* ══════════ IMPRESIONES ══════════ */
+function doPrint(html){
+  $id('printArea').innerHTML=html;
+  document.body.classList.add('printing');
+  setTimeout(()=>{ window.print(); setTimeout(()=>document.body.classList.remove('printing'),300); },60);
+}
+function prHead(sub){
+  const f=state.config.firma;
+  return '<div class="ph"><div><div class="b">NORTE<span>CONTABLE</span></div><div style="font-size:12px;margin-top:2px">'+esc(f.nombre)+'</div></div>'
+    +'<div class="cd">'+esc(f.dir)+'<br>'+esc(f.tel)+'<br>'+esc(sub||'')+'</div></div>';
+}
+const FINE_LEY='Documento interno de trabajo generado con Norte Contable. Las fechas son de referencia y deben verificarse contra el Código de Rentas Internas vigente y las Determinaciones Administrativas y Cartas Circulares de Hacienda. No constituye asesoría contributiva.';
+function printCalendario(){
+  const rs=proximosVencimientos(45);
+  let rows='';
+  rs.forEach(r=>{
+    const cli=getCli(r.cliId), obl=getObl(r.oblId);
+    if(!cli||!obl) return;
+    const d=diffDias(r.vence,hoyISO());
+    rows+='<tr><td>'+fmtF(r.vence)+'</td><td>'+esc(cli.nombre)+'</td><td>'+esc(obl.forma)+'</td><td>'+etiquetaPeriodo(r.periodo)+'</td>'
+      +'<td>'+(d<0?'ATRASADA '+Math.abs(d)+'d':d+' días')+'</td><td>'+esc(r.asignado||'')+'</td></tr>';
+  });
+  doPrint('<div class="pr-doc">'+prHead('Calendario — '+fmtF(hoyISO()))
+    +'<h2>Vencimientos de los próximos 45 días</h2>'
+    +'<table><tr><th>Vence</th><th>Cliente</th><th>Forma</th><th>Período</th><th>Plazo</th><th>Asignado</th></tr>'
+    +(rows||'<tr><td colspan="6">Sin vencimientos en la ventana.</td></tr>')+'</table>'
+    +'<p class="fine">'+FINE_LEY+'</p></div>');
+}
+function printTablero(){
+  let rows='';
+  clientesActivos().forEach(cli=>{
+    const abiertas=radsDe(cli.id).filter(r=>r.estado!=='radicado'&&r.estado!=='na').sort((a,b)=>a.vence<b.vence?-1:1);
+    if(!abiertas.length) return;
+    rows+='<tr><td><b>'+esc(cli.nombre)+'</b></td><td>'+abiertas.map(r=>{
+      const o=getObl(r.oblId); const d=diffDias(r.vence,hoyISO());
+      return esc(o?o.forma:'')+' ('+fmtCorta(r.vence)+(d<0?' ATRASADA':'')+')';
+    }).join(' · ')+'</td></tr>';
+  });
+  doPrint('<div class="pr-doc">'+prHead('Estado de radicaciones')
+    +'<h2>Radicaciones abiertas por cliente</h2>'
+    +'<table><tr><th style="width:32%">Cliente</th><th>Pendientes</th></tr>'+(rows||'<tr><td colspan="2">Todo radicado.</td></tr>')+'</table>'
+    +'<p class="fine">'+FINE_LEY+'</p></div>');
+}
+function printCartera(){
+  let rows='';
+  state.clientes.forEach(c=>{
+    rows+='<tr><td>'+esc(c.nombre)+'</td><td>'+esc(c.tipo)+'</td><td>'+esc(c.ein||'')+'</td>'
+      +'<td style="font-size:11px">'+esc(etiquetasPerfil(c).join(', '))+'</td>'
+      +'<td style="text-align:right">'+money(c.honorario)+'</td></tr>';
+  });
+  const tot=state.clientes.filter(c=>c.estado==='activo').reduce((s,c)=>s+c.honorario,0);
+  doPrint('<div class="pr-doc">'+prHead('Cartera de clientes')
+    +'<h2>Cartera — '+fmtF(hoyISO())+'</h2>'
+    +'<table><tr><th>Cliente</th><th>Tipo</th><th>EIN/SS</th><th>Perfil contributivo</th><th>Honorario</th></tr>'+rows
+    +'<tr><th colspan="4">HONORARIOS MENSUALES RECURRENTES</th><th style="text-align:right">'+money(tot)+'</th></tr></table>'
+    +'<p class="fine">Documento interno confidencial. Contiene números de identificación contributiva.</p></div>');
+}
+function printExpediente(id){
+  const c=getCli(id); if(!c) return;
+  const rads=radsDe(id).sort((a,b)=>a.vence<b.vence?-1:1);
+  let rowsR='';
+  rads.forEach(r=>{ const o=getObl(r.oblId); if(!o) return;
+    rowsR+='<tr><td>'+esc(o.forma)+'</td><td>'+etiquetaPeriodo(r.periodo)+'</td><td>'+fmtF(r.vence)+'</td>'
+      +'<td>'+EST_RAD[r.estado].n+(r.pagoPend?' — BALANCE CON HACIENDA':'')+'</td>'
+      +'<td>'+esc(r.preparadoPor||'')+(r.revisadoPor?' / '+esc(r.revisadoPor):'')+'</td>'
+      +'<td>'+esc(r.confirmacion||'')+'</td></tr>'; });
+  let rowsD='';
+  docsDe(id).forEach(p=>{ rowsD+='<tr><td>'+esc(p.item)+'</td><td>'+fmtF(p.solicitado)+'</td><td>'+(p.recibido?fmtF(p.recibido):'PENDIENTE')+'</td></tr>'; });
+  let rowsB='';
+  bitacoraDe(id).forEach(b=>{ rowsB+='<tr><td>'+fmtF(b.fecha)+'</td><td>'+esc(b.quien)+'</td><td>'+esc(b.texto)+'</td></tr>'; });
+  doPrint('<div class="pr-doc">'+prHead('Expediente del cliente')
+    +'<h2>'+esc(c.nombre)+'</h2>'
+    +'<table><tr><th>Tipo</th><td>'+esc(c.tipo)+'</td><th>EIN / SS</th><td>'+esc(c.ein||'—')+'</td></tr>'
+    +'<tr><th>Contacto</th><td>'+esc(c.contacto||'—')+'</td><th>Teléfono</th><td>'+esc(c.tel||'—')+'</td></tr>'
+    +'<tr><th>Cierre fiscal</th><td>'+MESES_FULL[Number(c.cierre)-1]+'</td><th>Honorario</th><td>'+money(c.honorario)+'</td></tr>'
+    +'<tr><th>Perfil</th><td colspan="3">'+esc(etiquetasPerfil(c).join(' · '))+'</td></tr></table>'
+    +'<h2 style="font-size:14px">Radicaciones</h2>'
+    +'<table><tr><th>Forma</th><th>Período</th><th>Vence</th><th>Estado</th><th>Preparó / Revisó</th><th>Confirmación</th></tr>'+(rowsR||'<tr><td colspan="6">Sin radicaciones.</td></tr>')+'</table>'
+    +(rowsD?'<h2 style="font-size:14px">Documentos</h2><table><tr><th>Documento</th><th>Solicitado</th><th>Recibido</th></tr>'+rowsD+'</table>':'')
+    +(rowsB?'<h2 style="font-size:14px">Bitácora</h2><table><tr><th>Fecha</th><th>Quién</th><th>Anotación</th></tr>'+rowsB+'</table>':'')
+    +'<p class="fine">'+FINE_LEY+'</p></div>');
+}
+function printFactura(id){
+  const f=state.facturas.find(x=>x.id===id); if(!f) return;
+  const c=getCli(f.cliId);
+  let rows='';
+  (f.lineas||[]).forEach(l=>{ rows+='<tr><td>'+esc(l.concepto)+'</td><td style="text-align:right">'+l.cant+'</td>'
+    +'<td style="text-align:right">'+money(l.precio)+'</td><td style="text-align:right">'+money(l.cant*l.precio)+'</td></tr>'; });
+  doPrint('<div class="pr-doc">'+prHead('Factura #'+f.num)
+    +'<h2>Factura #'+f.num+'</h2>'
+    +'<table><tr><th>Cliente</th><td>'+esc(c?c.nombre:'')+'</td><th>Fecha</th><td>'+fmtF(f.fecha)+'</td></tr>'
+    +'<tr><th>EIN / SS</th><td>'+esc(c?c.ein||'—':'')+'</td><th>Contacto</th><td>'+esc(c?c.contacto||'':'')+'</td></tr></table>'
+    +'<table><tr><th>Concepto</th><th>Cant.</th><th>Precio</th><th>Importe</th></tr>'+rows
+    +'<tr><td colspan="3">Subtotal</td><td style="text-align:right">'+money(subFactura(f))+'</td></tr>'
+    +(ivuFactura(f)?'<tr><td colspan="3">IVU '+state.config.ivu.pct+'%</td><td style="text-align:right">'+money(ivuFactura(f))+'</td></tr>'
+                   :'<tr><td colspan="3">IVU</td><td style="text-align:right">Exenta</td></tr>')
+    +'<tr><th colspan="3">TOTAL FACTURADO</th><th style="text-align:right">'+money(totalFactura(f))+'</th></tr>'
+    +(retencionFactura(f)?'<tr><td colspan="3">Menos: retención en el origen '+state.config.retencionPct+'%</td><td style="text-align:right">−'+money(retencionFactura(f))+'</td></tr>'
+      +'<tr><th colspan="3">NETO A PAGAR</th><th style="text-align:right">'+money(aCobrarFactura(f))+'</th></tr>':'')
+    +(pagadoFactura(f)>0?'<tr><td colspan="3">Pagado</td><td style="text-align:right">−'+money(pagadoFactura(f))+'</td></tr>'
+      +'<tr><th colspan="3">BALANCE</th><th style="text-align:right">'+money(balanceFactura(f))+'</th></tr>':'')
+    +'</table>'
+    +(retencionFactura(f)?'<p style="font-size:12px">Al pagar esta factura, favor de remitir el comprobante de retención correspondiente.</p>':'')
+    +(f.notas?'<p style="font-size:12px">'+esc(f.notas)+'</p>':'')
+    +'<p class="fine">'+esc(state.config.firma.nombre)+' · '+esc(state.config.firma.lic)+'. Gracias por su confianza.</p></div>');
+}
+
+/* ══════════ INIT ══════════ */
+loadState();
+$id('pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryLogin(); });
+setTimeout(()=>{ const i=$id('pinInput'); if(i&&i.focus) i.focus(); },200);
+</script>
+</body>
+</html>
