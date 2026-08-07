@@ -394,6 +394,8 @@ const EST_RAD={pendiente:{n:'Pendiente',cls:'pend'},proceso:{n:'En proceso',cls:
 function estadosDeObl(oblId){
   return oblId==='registro' ? {pendiente:{n:'Pendiente',cls:'pend'},radicado:{n:'Vigente',cls:'list'}} : EST_RAD;
 }
+/* nombre amigable de la obligación: "Retención 10%" en vez de "480.9A" */
+function oblNombre(o){ return (o&&(o.alias||o.forma))||''; }
 function nombreEstado(r){
   if(r.oblId==='registro'&&r.estado==='radicado') return 'Vigente';
   return (EST_RAD[r.estado]||{n:r.estado}).n;
@@ -442,7 +444,9 @@ function migrar(){
   if(c.firma.logo===undefined){ c.firma.logo=''; dirty=true; }
   /* obligaciones nuevas del catálogo que el estado guardado no tiene */
   catalogoObligaciones().forEach(o=>{
-    if(!c.obligaciones.some(x=>x.id===o.id)){ c.obligaciones.push(o); dirty=true; }
+    const ex=c.obligaciones.find(x=>x.id===o.id);
+    if(!ex){ c.obligaciones.push(o); dirty=true; }
+    else if(ex.alias===undefined&&o.alias){ ex.alias=o.alias; dirty=true; }
   });
   const r480=c.obligaciones.find(o=>o.id==='ret480');
   if(r480&&r480.dia===10){ r480.dia=15; dirty=true; }
@@ -588,68 +592,68 @@ function proxNum(campo){ const n=state.config[campo]||1; state.config[campo]=n+1
 function catalogoObligaciones(){
   return [
     /* MENSUALES */
-    {id:'ivu',    forma:'SC 2915',  nombre:'Planilla Mensual de IVU',
+    {id:'ivu',    forma:'SC 2915' alias:'IVU',  nombre:'Planilla Mensual de IVU',
      frec:'mensual', dia:20, offset:1, aplica:'ivu',
      nota:'Vence el día 20 del mes siguiente. Se radica y paga en SURI.'},
-    {id:'ret480', forma:'480.9A',   nombre:'Depósito de retención en el origen (servicios)',
+    {id:'ret480', forma:'480.9A' alias:'Retención 10%',   nombre:'Depósito de retención en el origen (servicios)',
      frec:'mensual', dia:15, offset:1, aplica:'retiene',
      nota:'Retención del 10% sobre pagos por servicios. Antes del 15 del mes siguiente — confirma el término en SURI.'},
-    {id:'imp',    forma:'SC 2915 D',nombre:'Impuesto sobre uso en importaciones',
+    {id:'imp',    forma:'SC 2915 D' alias:'IVU Importaciones',nombre:'Impuesto sobre uso en importaciones',
      frec:'mensual', dia:10, offset:1, aplica:'importa',
      nota:'Aplica a comerciantes que importan. Vence el día 10 del mes siguiente.'},
-    {id:'arb',    forma:'SC 2225',  nombre:'Planilla Mensual de Arbitrios',
+    {id:'arb',    forma:'SC 2225' alias:'Arbitrios',  nombre:'Planilla Mensual de Arbitrios',
      frec:'mensual', dia:10, offset:1, aplica:'arbitrios',
      nota:'Solo para negocios sujetos a arbitrios específicos.'},
     /* TRIMESTRALES */
-    {id:'patronal',forma:'499-R-1B',nombre:'Planilla Trimestral Patronal de Contribución Retenida',
+    {id:'patronal',forma:'499-R-1B' alias:'Patronal (nómina)',nombre:'Planilla Trimestral Patronal de Contribución Retenida',
      frec:'trimestral', dia:31, offset:1, aplica:'patrono',
      nota:'Vence el último día del mes siguiente al cierre del trimestre.'},
-    {id:'desempleo',forma:'PR-UI / Choferil',nombre:'Seguro por desempleo y seguro choferil',
+    {id:'desempleo',forma:'PR-UI / Choferil' alias:'Desempleo y Choferil',nombre:'Seguro por desempleo y seguro choferil',
      frec:'trimestral', dia:30, offset:1, aplica:'patrono',
      nota:'Departamento del Trabajo. Verifica la fecha exacta del trimestre.'},
-    {id:'noretenedor',forma:'Informe trimestral',nombre:'Informe de Agente No Retenedor de IVU',
+    {id:'noretenedor',forma:'Informe trimestral' alias:'No Retenedor',nombre:'Informe de Agente No Retenedor de IVU',
      frec:'trimestral', dia:31, offset:1, aplica:'noretenedor',
      nota:'Para comerciantes con certificado de No Retenedor. Confirma vigencia del requisito.'},
     /* ESTIMADAS */
-    {id:'estimada',forma:'480-E',   nombre:'Contribución estimada',
+    {id:'estimada',forma:'480-E' alias:'Estimada',   nombre:'Contribución estimada',
      frec:'estimada', dias:[[4,15],[6,15],[9,15],[1,15]], aplica:'estimada',
      nota:'Cuatro plazos: 15 de abril, junio y septiembre, y 15 de enero siguiente.'},
     /* ANUALES */
-    {id:'planilla_ind',forma:'481.0',nombre:'Planilla de Contribución sobre Ingresos — Individuo',
+    {id:'planilla_ind',forma:'481.0' alias:'Planilla Individuo',nombre:'Planilla de Contribución sobre Ingresos — Individuo',
      frec:'anual', mes:4, dia:15, aplica:'individuo',
      nota:'Vence el 15 de abril. Prórroga automática disponible; el pago no se prorroga.'},
-    {id:'planilla_corp',forma:'480.2',nombre:'Planilla de Contribución sobre Ingresos — Corporación',
+    {id:'planilla_corp',forma:'480.2' alias:'Planilla Corporación',nombre:'Planilla de Contribución sobre Ingresos — Corporación',
      frec:'anual_cierre', mesesTrasCierre:3, dia:15, aplica:'corporacion',
      nota:'Vence el día 15 del cuarto mes tras el cierre del año contributivo.'},
-    {id:'planilla_ec',forma:'480.2(EC)',nombre:'Planilla Informativa — Entidad Conducto',
+    {id:'planilla_ec',forma:'480.2(EC)' alias:'Planilla Conducto',nombre:'Planilla Informativa — Entidad Conducto',
      frec:'anual_cierre', mesesTrasCierre:2, dia:15, aplica:'conducto',
      nota:'Vence el día 15 del tercer mes tras el cierre.'},
-    {id:'informativas',forma:'480.6 / 480.7',nombre:'Informativas y comprobantes de retención',
+    {id:'informativas',forma:'480.6 / 480.7' alias:'Informativas',nombre:'Informativas y comprobantes de retención',
      frec:'anual', mes:2, dia:28, aplica:'informativas',
      nota:'Verifica la fecha del año en curso: algunas series vencen en enero y otras en febrero.'},
-    {id:'volumen',forma:'Volumen de negocios',nombre:'Declaración de volumen de negocios (patente municipal)',
+    {id:'volumen',forma:'Volumen de negocios' alias:'Patente Municipal',nombre:'Declaración de volumen de negocios (patente municipal)',
      frec:'anual', mes:4, dia:22, aplica:'patente',
      nota:'Se radica en el municipio donde opera. Fecha típica: 22 de abril (cinco días de prórroga usual).'},
-    {id:'propiedad',forma:'CRIM',   nombre:'Planilla de propiedad mueble (CRIM)',
+    {id:'propiedad',forma:'CRIM' alias:'CRIM Propiedad',   nombre:'Planilla de propiedad mueble (CRIM)',
      frec:'anual', mes:5, dia:15, aplica:'propiedad',
      nota:'CRIM. Verifica la fecha vigente del año.'},
-    {id:'registro',forma:'Registro de Comerciante',nombre:'Renovación de Registro de Comerciante',
+    {id:'registro',forma:'Registro de Comerciante' alias:'Registro de Comerciante',nombre:'Renovación de Registro de Comerciante',
      frec:'anual_mismo', mes:12, dia:31, aplica:'ivu',
      nota:'Renovación del año corriente. Anota el número de registro como confirmación y la fecha en que se renovó. Verifica la fecha propia de cada certificado en SURI.'},
-    {id:'corp_anual',forma:'Informe anual',nombre:'Informe Anual — Departamento de Estado',
+    {id:'corp_anual',forma:'Informe anual' alias:'Informe Anual',nombre:'Informe Anual — Departamento de Estado',
      frec:'anual', mes:4, dia:15, aplica:'corporacion',
      nota:'Departamento de Estado. Aplica a corporaciones y LLC.'},
     /* SERVICIOS RECURRENTES DE LA FIRMA (flujo interno, no Hacienda) */
-    {id:'banco', forma:'Bancos', nombre:'Estados de banco y conciliación',
+    {id:'banco', forma:'Bancos' alias:'Estados de Banco', nombre:'Estados de banco y conciliación',
      frec:'mensual', dia:5, offset:1, aplica:'banco',
      nota:'Se trabaja del 1 al 5 con los estados del mes anterior.'},
-    {id:'qb', forma:'QuickBooks', nombre:'Entrada y cierre mensual en QuickBooks',
+    {id:'qb', forma:'QuickBooks' alias:'QuickBooks', nombre:'Entrada y cierre mensual en QuickBooks',
      frec:'mensual', dia:31, offset:1, aplica:'quickbooks',
      nota:'Cierre contable del mes anterior en QuickBooks.'},
-    {id:'dep_patronal', forma:'Dep. nómina', nombre:'Depósito de retención de empleados (SS y Hacienda)',
+    {id:'dep_patronal', forma:'Dep. nómina' alias:'Depósito de Nómina', nombre:'Depósito de retención de empleados (SS y Hacienda)',
      frec:'mensual', dia:15, offset:1, aplica:'patrono',
      nota:'Depósito mensual de las retenciones de nómina. Antes del 15 del mes siguiente.'},
-    {id:'ret_trim', forma:'Trimestral 10%', nombre:'Trimestral de servicios profesionales',
+    {id:'ret_trim', forma:'Trimestral 10%' alias:'Trimestral 10%', nombre:'Trimestral de servicios profesionales',
      frec:'trimestral', dia:31, offset:1, aplica:'retiene',
      nota:'Cierre trimestral de la retención del 10% sobre servicios.'},
   ];
@@ -1053,7 +1057,7 @@ function renderHoy(){
     h+='<div class="alertband" style="background:linear-gradient(120deg,var(--coral) 0%,#A93A26 100%);color:#fff;border-radius:var(--r);padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow)">'
       +'<div style="font-weight:800;font-size:15px">⛔ '+venc.length+' radicación(es) vencida(s)</div>'
       +'<div style="font-size:13px;opacity:.95;margin-top:4px">'
-      +venc.slice(0,4).map(r=>esc((getCli(r.cliId)||{}).nombre)+' — '+esc((getObl(r.oblId)||{}).forma)+' ('+etiquetaPeriodo(r.periodo)+', venció '+fmtCorta(r.vence)+')').join(' · ')
+      +venc.slice(0,4).map(r=>esc((getCli(r.cliId)||{}).nombre)+' — '+esc(oblNombre(getObl(r.oblId)))+' ('+etiquetaPeriodo(r.periodo)+', venció '+fmtCorta(r.vence)+')').join(' · ')
       +(venc.length>4?' · y '+(venc.length-4)+' más':'')+'</div></div>';
   }
   h+='<div class="kpis">'
@@ -1104,7 +1108,7 @@ function renderHoy(){
     const cls= d<0?'r': d<=state.config.avisoDias?'a':'v';
     const docs=docsDe(r.cliId).filter(p=>!p.recibido).length;
     h+='<div class="dl"><div class="dd '+cls+'">'+(d<0?Math.abs(d):d)+'<small>'+(d<0?'ATRASO':'DÍAS')+'</small></div>'
-      +'<div class="bd"><div class="n">'+esc(cli.nombre)+' — '+esc(obl.forma)+'</div>'
+      +'<div class="bd"><div class="n">'+esc(cli.nombre)+' — '+esc(oblNombre(obl))+'</div>'
       +'<div class="s">'+esc(obl.nombre)+' · '+etiquetaPeriodo(r.periodo)+' · vence '+fmtF(r.vence)
       +(r.asignado?' · '+esc(r.asignado):'')
       +(docs?' · <b style="color:var(--coral)">'+docs+' documento(s) sin recibir</b>':'')+'</div></div>'
@@ -1122,7 +1126,7 @@ function renderHoy(){
       const items=docsDe(cid).filter(p=>!p.recibido);
       h+='<div class="remitem"><div class="ic" style="background:var(--gold-l)">📄</div>'
         +'<div class="bd"><div class="n">'+esc(cli.nombre)+' — '+items.length+' documento(s) pendiente(s)</div>'
-        +'<div class="s">Traba: '+porCli[cid].map(r=>esc((getObl(r.oblId)||{}).forma)).join(', ')+' · Pedido hace '+Math.abs(diffDias(hoyISO(),items[0].solicitado))+' días</div></div>'
+        +'<div class="s">Traba: '+porCli[cid].map(r=>esc(oblNombre(getObl(r.oblId)))).join(', ')+' · Pedido hace '+Math.abs(diffDias(hoyISO(),items[0].solicitado))+' días</div></div>'
         +(cli.tel?'<a class="btn xs wa" target="_blank" rel="noopener" href="'+waDocs(cid)+'">Recordar</a>':'')
         +'<button class="btn xs sec" onclick="verCli(\''+cid+'\')">Ver</button></div>';
     });
@@ -1155,7 +1159,7 @@ function renderHoy(){
     conBal.forEach(r=>{
       const cli=getCli(r.cliId), obl=getObl(r.oblId); if(!cli||!obl) return;
       h+='<div class="remitem"><div class="ic" style="background:var(--coral-l)">💸</div>'
-        +'<div class="bd"><div class="n">'+esc(cli.nombre)+' — '+esc(obl.forma)+' ('+etiquetaPeriodo(r.periodo)+')</div>'
+        +'<div class="bd"><div class="n">'+esc(cli.nombre)+' — '+esc(oblNombre(obl))+' ('+etiquetaPeriodo(r.periodo)+')</div>'
         +'<div class="s">'+(r.montoPago!=null?'Pagado '+money(r.montoPago)+' · ':'')+esc(r.notas||'Balance pendiente')+'</div></div>'
         +'<button class="btn xs sec" onclick="modalRad(\''+r.id+'\')">Abrir</button></div>';
     });
@@ -1174,7 +1178,7 @@ function waDocs(cliId){
   const rads=state.radicaciones.filter(r=>r.cliId===cliId&&r.estado!=='radicado'&&r.estado!=='na'&&diffDias(r.vence,hoyISO())<=20)
     .sort((a,b)=>a.vence<b.vence?-1:1);
   const lineas=items.map(p=>'· '+p.item).join('\n');
-  const urg= rads.length? '\n\nLo necesito para radicar '+(getObl(rads[0].oblId)||{}).forma+', que vence el '+fmtF(rads[0].vence)+'.' : '';
+  const urg= rads.length? '\n\nLo necesito para radicar '+oblNombre(getObl(rads[0].oblId))+', que vence el '+fmtF(rads[0].vence)+'.' : '';
   const msg='Saludos '+(cli.contacto||'').split(' ')[0]+', le escribe '+state.config.firma.nombre+'.\n\nPara continuar con su trabajo necesitamos:\n\n'+lineas+urg
     +'\n\nPuede mandarlos por este mismo WhatsApp o por correo. ¡Gracias!';
   return waLink(cli.tel,msg);
@@ -1207,7 +1211,7 @@ function renderTablero(){
   h+='<div class="rad-wrap"><table class="rad"><tr><th class="cli">Cliente</th>';
   cols.forEach(c=>{
     const d=diffDias(c.vence,hoyISO());
-    h+='<th title="'+esc(c.obl.nombre)+' — vence '+fmtF(c.vence)+'">'+esc(c.obl.forma)
+    h+='<th title="'+esc(c.obl.forma)+' — '+esc(c.obl.nombre)+' — vence '+fmtF(c.vence)+'">'+esc(oblNombre(c.obl))
       +'<br><span style="font-weight:600;color:'+(d<0?'var(--coral)':d<=state.config.avisoDias?'var(--gold)':'var(--faint)')+'">'+fmtCorta(c.vence)+'</span></th>';
   });
   h+='</tr>';
@@ -1219,7 +1223,7 @@ function renderTablero(){
       const r=asegurarRad(cli.id,c.obl.id,c.per);
       const est=estadoRad(r);
       const txt= est==='list'?'✓': est==='venc'?'!': est==='na'?'—': r.estado==='prorroga'?'P': (r.estado==='espera'?'⏳':(r.estado==='proceso'?'◐':'·'));
-      h+='<td><span class="chip '+est+'" onclick="clickChip(\''+r.id+'\')" title="'+esc(cli.nombre)+' — '+esc(c.obl.forma)+' '+etiquetaPeriodo(c.per)+'\n'+nombreEstado(r)+'\nVence '+fmtF(r.vence)+'">'+txt+'</span></td>';
+      h+='<td><span class="chip '+est+'" onclick="clickChip(\''+r.id+'\')" title="'+esc(cli.nombre)+' — '+esc(oblNombre(c.obl))+' '+etiquetaPeriodo(c.per)+'\n'+nombreEstado(r)+'\nVence '+fmtF(r.vence)+'">'+txt+'</span></td>';
     });
     h+='</tr>';
   });
@@ -1247,7 +1251,7 @@ function modalRad(radId){
   const _EST=estadosDeObl(r.oblId);
   const optsE=Object.keys(_EST).map(k=>'<option value="'+k+'"'+(r.estado===k||(!(r.estado in _EST)&&k==='pendiente')?' selected':'')+'>'+_EST[k].n+'</option>').join('');
   const esAnual=obl.frec==='anual'||obl.frec==='anual_cierre';
-  openModal(cli.nombre+' — '+obl.forma,
+  openModal(cli.nombre+' — '+oblNombre(obl)+(obl.alias&&obl.alias!==obl.forma?' ('+obl.forma+')':''),
     '<div class="mb">'
     +'<p class="muted" style="margin-bottom:6px"><b>'+esc(obl.nombre)+'</b> · '+etiquetaPeriodo(r.periodo)+'</p>'
     +'<div class="note" style="margin-bottom:12px">'+esc(obl.nota||'')+'</div>'
@@ -1319,7 +1323,7 @@ function aplicarRadicado(r,vals){
 function modalProrroga(id){
   const r=state.radicaciones.find(x=>x.id===id); if(!r) return;
   const obl=getObl(r.oblId), cli=getCli(r.cliId);
-  openModal('Prórroga — '+((obl&&obl.forma)||''),
+  openModal('Prórroga — '+oblNombre(obl),
     '<div class="mb">'
     +'<p class="tiny" style="margin-bottom:10px">'+esc(cli?cli.nombre:'')+' · '+etiquetaPeriodo(r.periodo)+' · vencimiento actual: '+fmtF(r.vence)+'</p>'
     +'<div class="avisoley" style="margin-bottom:12px"><b>La prórroga extiende el plazo para radicar, no para pagar.</b> Cualquier contribución adeudada se paga en la fecha original; lo que quede sin pagar acumula intereses y recargos desde ese día.</div>'
@@ -1440,7 +1444,7 @@ function renderFichaCli(id){
     rads.forEach(r=>{
       const obl=getObl(r.oblId); if(!obl) return;
       const est=estadoRad(r);
-      h+='<tr class="click" onclick="modalRad(\''+r.id+'\')"><td><b>'+esc(obl.forma)+'</b><br><span class="tiny">'+esc(obl.nombre)+'</span></td>'
+      h+='<tr class="click" onclick="modalRad(\''+r.id+'\')"><td><b>'+esc(oblNombre(obl))+'</b><br><span class="tiny">'+(obl.alias&&obl.alias!==obl.forma?esc(obl.forma)+' · ':'')+esc(obl.nombre)+'</span></td>'
         +'<td>'+etiquetaPeriodo(r.periodo)+'</td><td>'+fmtCorta(r.vence)+(r.venceOriginal?'<br><span class="tiny" style="text-decoration:line-through">'+fmtCorta(r.venceOriginal)+'</span>':'')+'</td>'
         +'<td><span class="chip '+est+'">'+nombreEstado(r)+'</span>'+(r.pagoPend?'<br><span class="badge b-coral" style="margin-top:3px">balance con Hacienda</span>':'')+'</td>'
         +'<td class="tiny">'+esc(r.confirmacion||'—')
@@ -1767,12 +1771,12 @@ function borrarTarea(id){ askConfirm('¿Eliminar esta tarea?',()=>{ state.tareas
 function tareaDesdeRad(radId){
   const r=state.radicaciones.find(x=>x.id===radId); if(!r) return;
   const obl=getObl(r.oblId);
-  modalTarea(null,r.cliId,r.id,((obl&&obl.forma)||'')+' '+etiquetaPeriodo(r.periodo)+': ');
+  modalTarea(null,r.cliId,r.id,oblNombre(obl)+' '+etiquetaPeriodo(r.periodo)+': ');
 }
 function generarFlujoPlanilla(radId){
   const r=state.radicaciones.find(x=>x.id===radId); if(!r) return;
   const cli=getCli(r.cliId), obl=getObl(r.oblId);
-  const etiqueta=((obl&&obl.forma)||'')+' '+etiquetaPeriodo(r.periodo);
+  const etiqueta=oblNombre(obl)+' '+etiquetaPeriodo(r.periodo);
   const nuevas=FLUJO_PLANILLA.filter(par=>!state.tareas.some(t=>t.radId===r.id&&t.titulo.indexOf(par[0])===0));
   if(!nuevas.length){ toast('El flujo de esta planilla ya está generado'); return; }
   nuevas.forEach(par=>{
@@ -2079,7 +2083,7 @@ function renderConfig(){
     +'<div style="max-height:340px;overflow-y:auto">';
   c.obligaciones.forEach(o=>{
     const cuantos=clientesActivos().filter(cl=>aplicaA(cl,o)).length;
-    h+='<div class="remitem"><div class="bd"><div class="n">'+esc(o.forma)+' — '+esc(o.nombre)+'</div>'
+    h+='<div class="remitem"><div class="bd"><div class="n">'+esc(oblNombre(o))+(o.alias&&o.alias!==o.forma?' <span class="tiny">('+esc(o.forma)+')</span>':'')+' — '+esc(o.nombre)+'</div>'
       +'<div class="s">'+esc(o.frec)+(o.dia?' · día '+o.dia:'')+' · aplica a '+cuantos+' cliente(s)</div></div>'
       +'<button class="btn xs sec" onclick="modalObl(\''+o.id+'\')">Editar</button></div>';
   });
@@ -2123,6 +2127,7 @@ function modalObl(id){
   openModal('Obligación — '+o.forma,
     '<div class="mb"><div class="frow"><div class="fld"><label>Forma</label><input id="ob_forma" value="'+esc(o.forma)+'"></div>'
     +'<div class="fld"><label>Día de vencimiento</label><input type="number" id="ob_dia" value="'+(o.dia||15)+'"></div></div>'
+    +'<div class="fld"><label>Nombre amigable (lo que ve el equipo)</label><input id="ob_alias" value="'+esc(o.alias||'')+'" placeholder="Ej. Retención 10%"><div class="note">El número técnico ('+esc(o.forma)+') se muestra chiquito al lado.</div></div>'
     +'<div class="fld"><label>Nombre</label><input id="ob_nom" value="'+esc(o.nombre)+'"></div>'
     +'<div class="fld"><label>Nota que ve tu equipo</label><input id="ob_nota" value="'+esc(o.nota||'')+'"></div>'
     +'<p class="tiny">Frecuencia: <b>'+esc(o.frec)+'</b> · aplica al perfil <b>'+esc(o.aplica)+'</b>. Cambiar el día no mueve las radicaciones ya generadas; usa "Posponer" en cada una para eso.</p>'
@@ -2131,6 +2136,7 @@ function modalObl(id){
 function guardarObl(id){
   const o=getObl(id); if(!o) return;
   o.forma=$id('ob_forma').value.trim(); o.nombre=$id('ob_nom').value.trim();
+  o.alias=$id('ob_alias').value.trim();
   o.dia=Number($id('ob_dia').value)||o.dia; o.nota=$id('ob_nota').value.trim();
   saveState(); closeModal(); renderAll(); toast('Obligación actualizada');
 }
