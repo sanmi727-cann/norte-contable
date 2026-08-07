@@ -390,6 +390,14 @@ const nube={firmaId:null,rol:null,quien:'',canal:null,saveTimer:null,ultimoGuard
 /* ══════════ CONSTANTES ══════════ */
 const TIPOS_CLIENTE=['Individuo','Individuo con negocio','Corporación','LLC','Entidad conducto','Sin fines de lucro'];
 const EST_RAD={pendiente:{n:'Pendiente',cls:'pend'},proceso:{n:'En proceso',cls:'prox'},espera:{n:'Esperando cliente',cls:'prox'},prorroga:{n:'En prórroga',cls:'prorr'},radicado:{n:'Radicado',cls:'list'},na:{n:'No aplica',cls:'na'}};
+/* el Registro de Comerciante es un certificado: solo Pendiente o Vigente */
+function estadosDeObl(oblId){
+  return oblId==='registro' ? {pendiente:{n:'Pendiente',cls:'pend'},radicado:{n:'Vigente',cls:'list'}} : EST_RAD;
+}
+function nombreEstado(r){
+  if(r.oblId==='registro'&&r.estado==='radicado') return 'Vigente';
+  return (EST_RAD[r.estado]||{n:r.estado}).n;
+}
 const METODOS_PAGO=['ATH Móvil','Transferencia','Cheque','Efectivo','Tarjeta'];
 const MESES_ABR=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 const MESES_FULL=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -1177,7 +1185,7 @@ function renderTablero(){
       const r=asegurarRad(cli.id,c.obl.id,c.per);
       const est=estadoRad(r);
       const txt= est==='list'?'✓': est==='venc'?'!': est==='na'?'—': r.estado==='prorroga'?'P': (r.estado==='espera'?'⏳':(r.estado==='proceso'?'◐':'·'));
-      h+='<td><span class="chip '+est+'" onclick="clickChip(\''+r.id+'\')" title="'+esc(cli.nombre)+' — '+esc(c.obl.forma)+' '+etiquetaPeriodo(c.per)+'\n'+EST_RAD[r.estado].n+'\nVence '+fmtF(r.vence)+'">'+txt+'</span></td>';
+      h+='<td><span class="chip '+est+'" onclick="clickChip(\''+r.id+'\')" title="'+esc(cli.nombre)+' — '+esc(c.obl.forma)+' '+etiquetaPeriodo(c.per)+'\n'+nombreEstado(r)+'\nVence '+fmtF(r.vence)+'">'+txt+'</span></td>';
     });
     h+='</tr>';
   });
@@ -1202,7 +1210,8 @@ function modalRad(radId){
   const docs=docsDe(r.cliId).filter(p=>!p.recibido);
   const d=diffDias(r.vence,hoyISO());
   const optS=v=>'<option value="">— sin asignar —</option>'+state.config.staff.map(s=>'<option'+(v===s?' selected':'')+'>'+esc(s)+'</option>').join('');
-  const optsE=Object.keys(EST_RAD).map(k=>'<option value="'+k+'"'+(r.estado===k?' selected':'')+'>'+EST_RAD[k].n+'</option>').join('');
+  const _EST=estadosDeObl(r.oblId);
+  const optsE=Object.keys(_EST).map(k=>'<option value="'+k+'"'+(r.estado===k||(!(r.estado in _EST)&&k==='pendiente')?' selected':'')+'>'+_EST[k].n+'</option>').join('');
   const esAnual=obl.frec==='anual'||obl.frec==='anual_cierre';
   openModal(cli.nombre+' — '+obl.forma,
     '<div class="mb">'
@@ -1398,7 +1407,7 @@ function renderFichaCli(id){
       const est=estadoRad(r);
       h+='<tr class="click" onclick="modalRad(\''+r.id+'\')"><td><b>'+esc(obl.forma)+'</b><br><span class="tiny">'+esc(obl.nombre)+'</span></td>'
         +'<td>'+etiquetaPeriodo(r.periodo)+'</td><td>'+fmtCorta(r.vence)+(r.venceOriginal?'<br><span class="tiny" style="text-decoration:line-through">'+fmtCorta(r.venceOriginal)+'</span>':'')+'</td>'
-        +'<td><span class="chip '+est+'">'+EST_RAD[r.estado].n+'</span>'+(r.pagoPend?'<br><span class="badge b-coral" style="margin-top:3px">balance con Hacienda</span>':'')+'</td>'
+        +'<td><span class="chip '+est+'">'+nombreEstado(r)+'</span>'+(r.pagoPend?'<br><span class="badge b-coral" style="margin-top:3px">balance con Hacienda</span>':'')+'</td>'
         +'<td class="tiny">'+esc(r.confirmacion||'—')
         +(r.preparadoPor||r.revisadoPor?'<br>Prep. '+esc(r.preparadoPor||'—')+' · Rev. '+esc(r.revisadoPor||'—'):(r.asignado?'<br>'+esc(r.asignado):''))+'</td></tr>';
     });
@@ -2195,7 +2204,7 @@ function printExpediente(id){
   let rowsR='';
   rads.forEach(r=>{ const o=getObl(r.oblId); if(!o) return;
     rowsR+='<tr><td>'+esc(o.forma)+'</td><td>'+etiquetaPeriodo(r.periodo)+'</td><td>'+fmtF(r.vence)+'</td>'
-      +'<td>'+EST_RAD[r.estado].n+(r.pagoPend?' — BALANCE CON HACIENDA':'')+'</td>'
+      +'<td>'+nombreEstado(r)+(r.pagoPend?' — BALANCE CON HACIENDA':'')+'</td>'
       +'<td>'+esc(r.preparadoPor||'')+(r.revisadoPor?' / '+esc(r.revisadoPor):'')+'</td>'
       +'<td>'+esc(r.confirmacion||'')+'</td></tr>'; });
   let rowsD='';
