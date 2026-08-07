@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
-<title>Norte Contable — Gestión de práctica contributiva PR</title>
+<title>Norte Contable · Demo</title>
 <!--
 ════════════════════════════════════════════════════════════════════
   NORTE CONTABLE v1.1 (Demo) — Gestión de práctica para contables,
@@ -383,7 +383,7 @@ svg.chart{width:100%;height:150px;display:block}
 const SUPA_URL='https://rysecnkzdabypdltlrtw.supabase.co';
 const SUPA_KEY='sb_publishable_Df4f1w8LDtx21VGYtJHYbg_DA9pFWpD';
 const _qs=new URLSearchParams(location.search);
-const DEMO=_qs.has('demo')||(location.protocol==='file:'&&!_qs.has('nube'));
+const DEMO=true; /* rama demo: siempre en modo demostración, sin nube */
 const sb=(!DEMO&&window.supabase)?window.supabase.createClient(SUPA_URL,SUPA_KEY):null;
 const nube={firmaId:null,rol:null,quien:'',canal:null,saveTimer:null,ultimoGuardado:0};
 
