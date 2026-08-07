@@ -485,7 +485,7 @@ function migrar(){
       if(!cl.renovaciones['Registro de Comerciante'])
         cl.renovaciones['Registro de Comerciante']={num:cl.regComNum||'',vence:cl.regComVence||''};
       delete cl.regComNum; delete cl.regComVence; dirty=true;
-    }
+    }else if(cl.regComNum!==undefined){ delete cl.regComNum; delete cl.regComVence; dirty=true; }
   });
   if(dirty) saveState();
 }
