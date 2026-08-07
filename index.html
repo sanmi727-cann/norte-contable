@@ -458,16 +458,19 @@ function migrar(){
   state.radicaciones.forEach(r=>{
     if(r.preparadoPor===undefined){ r.preparadoPor=''; r.revisadoPor=''; r.montoPago=null; r.pagoPend=false; dirty=true; }
   });
-  /* Registro de Comerciante: antes se generaba como planilla (año siguiente)
-     y salía duplicado; ahora es renovación del año corriente */
-  const anioAct=String(new Date().getFullYear());
-  state.radicaciones.forEach(r=>{
-    if(r.oblId!=='registro') return;
-    const debido=rodarFinDeSemana(r.periodo+'-12-31');
-    if(r.vence!==debido&&!r.venceOriginal){ r.vence=debido; dirty=true; }
-    if(r.periodo<anioAct&&r.estado==='pendiente'){
-      r.estado='na'; r.notas=(r.notas?r.notas+' · ':'')+'Ciclo anterior'; dirty=true;
-    }
+  /* Registro de Comerciante: deja de generarse por período — pasa a ser
+     dato del cliente (número + fecha de vencimiento del certificado) */
+  if(state.radicaciones.some(r=>r.oblId==='registro')||c.obligaciones.some(o=>o.id==='registro')){
+    state.radicaciones.filter(r=>r.oblId==='registro').forEach(r=>{
+      const cl=getCli(r.cliId);
+      if(cl&&r.confirmacion&&!cl.regComNum) cl.regComNum=r.confirmacion;
+    });
+    state.radicaciones=state.radicaciones.filter(r=>r.oblId!=='registro');
+    c.obligaciones=c.obligaciones.filter(o=>o.id!=='registro');
+    dirty=true;
+  }
+  state.clientes.forEach(cl=>{
+    if(cl.regComNum===undefined){ cl.regComNum=''; cl.regComVence=''; dirty=true; }
   });
   if(dirty) saveState();
 }
@@ -637,9 +640,9 @@ function catalogoObligaciones(){
     {id:'propiedad',forma:'CRIM', alias:'CRIM Propiedad',   nombre:'Planilla de propiedad mueble (CRIM)',
      frec:'anual', mes:5, dia:15, aplica:'propiedad',
      nota:'CRIM. Verifica la fecha vigente del año.'},
-    {id:'registro',forma:'Registro de Comerciante', alias:'Registro de Comerciante',nombre:'Renovación de Registro de Comerciante',
-     frec:'anual_mismo', mes:12, dia:31, aplica:'ivu',
-     nota:'Renovación del año corriente. Anota el número de registro como confirmación y la fecha en que se renovó. Verifica la fecha propia de cada certificado en SURI.'},
+    /* El Registro de Comerciante NO se genera por período: vive en la ficha
+       del cliente (regComNum + regComVence, usualmente cada 2 años) y la
+       alerta nace de esa fecha. Ver migrar() y renderHoy(). */
     {id:'corp_anual',forma:'Informe anual', alias:'Informe Anual',nombre:'Informe Anual — Departamento de Estado',
      frec:'anual', mes:4, dia:15, aplica:'corporacion',
      nota:'Departamento de Estado. Aplica a corporaciones y LLC.'},
@@ -1133,19 +1136,19 @@ function renderHoy(){
     h+='</div>';
   }
 
-  /* renovaciones de Registro de Comerciante que vencen en 60 días */
-  const regProx=state.radicaciones.filter(r=>r.oblId==='registro'&&r.estado!=='radicado'&&r.estado!=='na'&&diffDias(r.vence,hoyISO())<=60)
-    .sort((a,b)=>a.vence<b.vence?-1:1);
+  /* Registros de Comerciante: la alerta nace de la fecha del certificado
+     de cada cliente (usualmente cada 2 años), 60 días antes */
+  const regProx=clientesActivos().filter(c=>c.regComVence&&diffDias(c.regComVence,hoyISO())<=60)
+    .sort((a,b)=>a.regComVence<b.regComVence?-1:1);
   if(regProx.length){
     h+='<div class="card" style="border-left:4px solid var(--gold)"><h2>Registros de Comerciante por renovar</h2>'
-      +'<p class="tiny" style="margin-bottom:10px">Certificados que vencen en los próximos 60 días. Renueva en SURI y anota el número y la fecha.</p>';
-    regProx.slice(0,10).forEach(r=>{
-      const cli=getCli(r.cliId); if(!cli) return;
-      const d=diffDias(r.vence,hoyISO());
-      h+='<div class="dl"><div class="dd '+(d<0?'r':d<=15?'a':'v')+'">'+(d<0?Math.abs(d):d)+'<small>'+(d<0?'ATRASO':'DÍAS')+'</small></div>'
-        +'<div class="bd"><div class="n">'+esc(cli.nombre)+'</div>'
-        +'<div class="s">Vence '+fmtF(r.vence)+(r.confirmacion?' · Reg. '+esc(r.confirmacion):'')+'</div></div>'
-        +'<button class="btn xs sec" onclick="modalRad(\''+r.id+'\')">Renovar</button></div>';
+      +'<p class="tiny" style="margin-bottom:10px">Certificados que vencen en 60 días o menos. Al renovar en SURI, actualiza la fecha en la ficha del cliente (usualmente +2 años).</p>';
+    regProx.slice(0,10).forEach(cl=>{
+      const d=diffDias(cl.regComVence,hoyISO());
+      h+='<div class="dl"><div class="dd '+(d<0?'r':d<=15?'a':'v')+'">'+(d<0?Math.abs(d):d)+'<small>'+(d<0?'VENCIDO':'DÍAS')+'</small></div>'
+        +'<div class="bd"><div class="n">'+esc(cl.nombre)+'</div>'
+        +'<div class="s">Vence '+fmtF(cl.regComVence)+(cl.regComNum?' · Reg. '+esc(cl.regComNum):'')+'</div></div>'
+        +'<button class="btn xs sec" onclick="modalCli(\''+cl.id+'\')">Actualizar</button></div>';
     });
     if(regProx.length>10) h+='<p class="tiny" style="margin-top:8px">y '+(regProx.length-10)+' más.</p>';
     h+='</div>';
@@ -1422,6 +1425,7 @@ function renderFichaCli(id){
     +(c.cierre!=='12'?' · <b>cierre fiscal '+MESES_FULL[Number(c.cierre)-1]+'</b>':'')+'</div>'
     +'<div class="tiny" style="margin-top:4px">'+etiquetasPerfil(c).join(' · ')+'</div>'
     +((c.suriUsuario||c.suriPass)?'<div class="tiny" style="margin-top:4px">🔑 SURI: <b>'+esc(c.suriUsuario||'—')+'</b> · <span id="suri_p" data-v="'+esc(c.suriPass||'')+'">••••••</span> <span class="link" onclick="var s=$id(\'suri_p\');s.textContent=s.textContent===\'••••••\'?(s.dataset.v||\'—\'):\'••••••\'">ver</span></div>':'')
+    +((c.regComNum||c.regComVence)?'<div class="tiny" style="margin-top:4px">🪪 Registro de Comerciante: <b>'+esc(c.regComNum||'—')+'</b>'+(c.regComVence?' · vence <b style="color:'+(diffDias(c.regComVence,hoyISO())<=60?'var(--coral)':'inherit')+'">'+fmtF(c.regComVence)+'</b>':' · <span style="color:var(--gold)">falta la fecha de vencimiento</span>')+'</div>':'')
     +(c.notas?'<div class="tiny" style="margin-top:4px">📝 '+esc(c.notas)+'</div>':'')+'</div>'
     +'<div class="row">'
     +(c.tel?'<a class="btn sm wa" target="_blank" rel="noopener" href="'+waDocs(c.id)+'">📲 Pedir documentos</a>':'')
@@ -1525,6 +1529,9 @@ function modalCli(id){
     +'</div><div class="frow">'
     +'<div class="fld"><label>Usuario de SURI del cliente</label><input id="cl_suri_u" value="'+(c?esc(c.suriUsuario||''):'')+'" autocomplete="off"></div>'
     +'<div class="fld"><label>Contraseña de SURI</label><input id="cl_suri_p" value="'+(c?esc(c.suriPass||''):'')+'" autocomplete="off"><div class="note">Parte del expediente del cliente — visible para el equipo de la firma.</div></div>'
+    +'</div><div class="frow">'
+    +'<div class="fld"><label>Registro de Comerciante (número)</label><input id="cl_reg_n" value="'+(c?esc(c.regComNum||''):'')+'" placeholder="0000000-0000"></div>'
+    +'<div class="fld"><label>Vence el Registro de Comerciante</label><input type="date" id="cl_reg_v" value="'+(c?esc(c.regComVence||''):'')+'"><div class="note">Usualmente cada 2 años. Con la fecha puesta, Hoy avisa 60 días antes.</div></div>'
     +'</div>'
     +'<div class="fld"><label>Perfil contributivo — determina qué se le genera automáticamente</label>'
     +'<div style="max-height:230px;overflow-y:auto;border:1.5px solid var(--line-d);border-radius:8px;padding:10px">'
@@ -1554,7 +1561,8 @@ function guardarCli(id){
     tributacion:$id('cl_trib')?$id('cl_trib').value:'corp',
     honorario:Number($id('cl_hon').value)||0,contacto:$id('cl_cont').value.trim(),tel:$id('cl_tel').value.trim(),
     email:$id('cl_email').value.trim(),perfil,estado:$id('cl_estado').value,notas:$id('cl_notas').value.trim(),
-    suriUsuario:$id('cl_suri_u').value.trim(),suriPass:$id('cl_suri_p').value};
+    suriUsuario:$id('cl_suri_u').value.trim(),suriPass:$id('cl_suri_p').value,
+    regComNum:$id('cl_reg_n').value.trim(),regComVence:$id('cl_reg_v').value};
   if(id){
     Object.assign(getCli(id),datos);
     /* si la LLC cambió de elección, la planilla del tipo que ya no aplica se marca N/A */
