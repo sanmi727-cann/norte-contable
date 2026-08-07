@@ -324,7 +324,7 @@ svg.chart{width:100%;height:150px;display:block}
     </div>
     <div class="login-box" id="loginNube" style="display:none">
       <label for="emailInput">Entrar a tu firma</label>
-      <input id="emailInput" type="email" autocomplete="email" placeholder="correo@tufirma.com">
+      <input id="emailInput" type="text" autocomplete="username" placeholder="Usuario (o correo)">
       <input id="passInput" type="password" autocomplete="current-password" placeholder="Contraseña">
       <button class="btn" onclick="loginNube()">Entrar</button>
       <div class="login-err" id="loginErrNube"></div>
@@ -497,11 +497,12 @@ async function entrarNube(){
   }catch(e){ mostrarLoginNube('No se pudo conectar. Revisa tu internet y recarga.'); }
 }
 async function loginNube(){
-  const email=$id('emailInput').value.trim(), pass=$id('passInput').value;
-  if(!email||!pass){ $id('loginErrNube').textContent='Escribe tu correo y contraseña'; return; }
+  let email=$id('emailInput').value.trim(), pass=$id('passInput').value;
+  if(!email||!pass){ $id('loginErrNube').textContent='Escribe tu usuario y contraseña'; return; }
+  if(email.indexOf('@')<0) email+='@norte.app';   /* "rosado" → rosado@norte.app */
   $id('loginErrNube').textContent='Entrando…';
   const {data,error}=await sb.auth.signInWithPassword({email,password:pass});
-  if(error){ $id('loginErrNube').textContent='Correo o contraseña incorrectos'; return; }
+  if(error){ $id('loginErrNube').textContent='Usuario o contraseña incorrectos'; return; }
   $id('loginErrNube').textContent='';
   await cargarFirma(data.session);
 }
