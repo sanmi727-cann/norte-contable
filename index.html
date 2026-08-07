@@ -476,8 +476,16 @@ function migrar(){
     c.obligaciones=c.obligaciones.filter(o=>o.id!=='registro');
     dirty=true;
   }
+  /* renovaciones: lista configurable de permisos/certificados por cliente;
+     los campos viejos de Registro de Comerciante se mudan a la lista */
+  if(!c.renovables){ c.renovables=renovablesDefault(); dirty=true; }
   state.clientes.forEach(cl=>{
-    if(cl.regComNum===undefined){ cl.regComNum=''; cl.regComVence=''; dirty=true; }
+    if(cl.renovaciones===undefined){ cl.renovaciones={}; dirty=true; }
+    if(cl.regComNum||cl.regComVence){
+      if(!cl.renovaciones['Registro de Comerciante'])
+        cl.renovaciones['Registro de Comerciante']={num:cl.regComNum||'',vence:cl.regComVence||''};
+      delete cl.regComNum; delete cl.regComVence; dirty=true;
+    }
   });
   if(dirty) saveState();
 }
@@ -493,6 +501,7 @@ function estadoVacio(nombreFirma){
       staff:['Socio'],
       obligaciones:catalogoObligaciones(),
       plantillasDocs:plantillasDefault(),
+      renovables:renovablesDefault(),
     },
     clientes:[], radicaciones:[], pendientes:[], tiempo:[], facturas:[], bitacora:[], tareas:[],
   };
@@ -862,6 +871,22 @@ function facturasDe(cliId){ return state.facturas.filter(f=>f.cliId===cliId); }
 function porCobrar(){ return state.facturas.filter(f=>balanceFactura(f)>0.005); }
 function antiguedad(f){ return diffDias(hoyISO(),f.fecha); }
 
+/* ══════════ RENOVACIONES — permisos y certificados por cliente ══════════
+   Cada cliente marca los que le aplican; cada uno guarda su número y su
+   fecha de vencimiento, y Hoy avisa 60 días antes. Lista editable en Config. */
+function renovablesDefault(){
+  return ['Registro de Comerciante','Permiso Único','Certificado de Revendedor','SAM (federal)','RUP'];
+}
+function renovacionesPorVencer(){
+  const out=[];
+  clientesActivos().forEach(cl=>{
+    Object.entries(cl.renovaciones||{}).forEach(([nombre,d])=>{
+      if(d&&d.vence&&diffDias(d.vence,hoyISO())<=60) out.push({cli:cl,nombre,num:d.num||'',vence:d.vence,dias:diffDias(d.vence,hoyISO())});
+    });
+  });
+  return out.sort((a,b)=>a.vence<b.vence?-1:1);
+}
+
 /* ══════════ PLANTILLAS DE CHECKLIST — por tipo de entidad ══════════ */
 function plantillasDefault(){
   const corp=['Estados de banco del año','Estados financieros o balance de comprobación','Inventario al cierre','Compras de equipo o activos (depreciación)','Informativas 480 recibidas','Nómina anual y 499R-2 emitidos','Copia de la planilla del año anterior'];
@@ -885,28 +910,32 @@ function seedState(){
       {ivu:true,retiene:true,importa:true,patrono:true,estimada:true,patente:true,propiedad:true,banco:true,quickbooks:true},450,
       {notas:'Cierre diciembre. Importa de Florida mensual.',
        suriUsuario:'ferreteria.hermanos',suriPass:'Demo2026!',
-       regComNum:'2301456-0101',regComVence:daysFrom(25)}),
+       renovaciones:{'Registro de Comerciante':{num:'2301456-0101',vence:daysFrom(25)},
+                     'Permiso Único':{num:'PU-889123',vence:daysFrom(48)}}}),
     C('c2','Panadería La Ceiba LLC','LLC','66-0598877','Carmen Delgado','939-555-2002',
       {ivu:true,patrono:true,patente:true,propiedad:true,banco:true,nomina:true},325,
-      {regComNum:'2301457-0202',regComVence:daysFrom(-12)}),
+      {renovaciones:{'Registro de Comerciante':{num:'2301457-0202',vence:daysFrom(-12)}}}),
     C('c3','Dra. Marisel Vega — Consultorio','Individuo con negocio','584-55-1234','Marisel Vega','787-555-2003',
       {retiene:true,estimada:true,patente:true},275,
       {notas:'Servicios médicos — verificar exención de IVU',suriUsuario:'dra.vega',suriPass:'Demo2026!'}),
     C('c4','Transporte Cibuco Corp.','Corporación','66-0533221','Luis Nieves','787-555-2004',
       {ivu:true,retiene:true,patrono:true,estimada:true,patente:true,propiedad:true,quickbooks:true,nomina:true},520,
       {cierre:'06',notas:'CIERRE FISCAL EN JUNIO — no diciembre',
-       regComNum:'2301460-0404',regComVence:daysFrom(320)}),
+       renovaciones:{'Registro de Comerciante':{num:'2301460-0404',vence:daysFrom(320)},
+                     'Certificado de Revendedor':{num:'CR-55412',vence:daysFrom(210)}}}),
     C('c5','Colmado El Tapón','Individuo con negocio','583-44-9876','Papo Rivera','787-555-2005',
       {ivu:true,patente:true},180,
-      {regComNum:'2301461-0505',regComVence:daysFrom(400)}),
+      {renovaciones:{'Registro de Comerciante':{num:'2301461-0505',vence:daysFrom(400)}}}),
     C('c6','Bufete Santana & Asociados','Entidad conducto','66-0577665','Lcda. Santana','787-555-2006',
       {retiene:true,patrono:true,estimada:true,patente:true,banco:true,quickbooks:true},600),
     C('c7','Fundación Raíces del Norte','Sin fines de lucro','66-0544332','Ana Pérez','939-555-2007',
-      {patrono:true,nomina:true},220,{notas:'Exenta — verificar radicaciones informativas'}),
+      {patrono:true,nomina:true},220,
+      {notas:'Exenta — verificar radicaciones informativas',
+       renovaciones:{'SAM (federal)':{num:'SAM-XK4T9',vence:daysFrom(55)},'RUP':{num:'RUP-33821',vence:daysFrom(180)}}}),
     C('c8','José A. Morales','Individuo','582-33-4455','José Morales','787-555-2008',{estimada:true},150),
     C('c9','Taller Hermanos Santiago','Individuo con negocio','581-22-7788','Cheo Santiago','787-555-2009',
       {ivu:true,patrono:true,patente:true},240,
-      {regComNum:'2301462-0606',regComVence:daysFrom(290)}),
+      {renovaciones:{'Registro de Comerciante':{num:'2301462-0606',vence:daysFrom(290)}}}),
     C('c10','Rentas del Norte LLC','LLC','66-0566554','Sofía Marrero','787-555-2010',
       {patente:true,propiedad:true,estimada:true,quickbooks:true},290,
       {notas:'Room tax se declara en Turismo, no en Hacienda',tributacion:'conducto'}),
@@ -925,6 +954,7 @@ function seedState(){
       staff:['Socio','Ana (staff)','Ruby (staff)'],
       obligaciones:catalogoObligaciones(),
       plantillasDocs:plantillasDefault(),
+      renovables:renovablesDefault(),
     },
     clientes, radicaciones:[], pendientes:[], tiempo:[], facturas:[], bitacora:[], tareas:[],
   };
@@ -1151,19 +1181,17 @@ function renderHoy(){
     h+='</div>';
   }
 
-  /* Registros de Comerciante: la alerta nace de la fecha del certificado
-     de cada cliente (usualmente cada 2 años), 60 días antes */
-  const regProx=clientesActivos().filter(c=>c.regComVence&&diffDias(c.regComVence,hoyISO())<=60)
-    .sort((a,b)=>a.regComVence<b.regComVence?-1:1);
+  /* renovaciones y permisos (Registro, Permiso Único, Revendedor, SAM, RUP…):
+     la alerta nace de la fecha de cada certificado, 60 días antes */
+  const regProx=renovacionesPorVencer();
   if(regProx.length){
-    h+='<div class="card" style="border-left:4px solid var(--gold)"><h2>Registros de Comerciante por renovar</h2>'
-      +'<p class="tiny" style="margin-bottom:10px">Certificados que vencen en 60 días o menos. Al renovar en SURI, actualiza la fecha en la ficha del cliente (usualmente +2 años).</p>';
-    regProx.slice(0,10).forEach(cl=>{
-      const d=diffDias(cl.regComVence,hoyISO());
-      h+='<div class="dl"><div class="dd '+(d<0?'r':d<=15?'a':'v')+'">'+(d<0?Math.abs(d):d)+'<small>'+(d<0?'VENCIDO':'DÍAS')+'</small></div>'
-        +'<div class="bd"><div class="n">'+esc(cl.nombre)+'</div>'
-        +'<div class="s">Vence '+fmtF(cl.regComVence)+(cl.regComNum?' · Reg. '+esc(cl.regComNum):'')+'</div></div>'
-        +'<button class="btn xs sec" onclick="modalCli(\''+cl.id+'\')">Actualizar</button></div>';
+    h+='<div class="card" style="border-left:4px solid var(--gold)"><h2>Renovaciones y permisos por vencer</h2>'
+      +'<p class="tiny" style="margin-bottom:10px">Vencen en 60 días o menos. Al renovar, actualiza la fecha en la ficha del cliente.</p>';
+    regProx.slice(0,10).forEach(x=>{
+      h+='<div class="dl"><div class="dd '+(x.dias<0?'r':x.dias<=15?'a':'v')+'">'+(x.dias<0?Math.abs(x.dias):x.dias)+'<small>'+(x.dias<0?'VENCIDO':'DÍAS')+'</small></div>'
+        +'<div class="bd"><div class="n">'+esc(x.cli.nombre)+' — '+esc(x.nombre)+'</div>'
+        +'<div class="s">Vence '+fmtF(x.vence)+(x.num?' · #'+esc(x.num):'')+'</div></div>'
+        +'<button class="btn xs sec" onclick="modalCli(\''+x.cli.id+'\')">Actualizar</button></div>';
     });
     if(regProx.length>10) h+='<p class="tiny" style="margin-top:8px">y '+(regProx.length-10)+' más.</p>';
     h+='</div>';
@@ -1440,7 +1468,10 @@ function renderFichaCli(id){
     +(c.cierre!=='12'?' · <b>cierre fiscal '+MESES_FULL[Number(c.cierre)-1]+'</b>':'')+'</div>'
     +'<div class="tiny" style="margin-top:4px">'+etiquetasPerfil(c).join(' · ')+'</div>'
     +((c.suriUsuario||c.suriPass)?'<div class="tiny" style="margin-top:4px">🔑 SURI: <b>'+esc(c.suriUsuario||'—')+'</b> · <span id="suri_p" data-v="'+esc(c.suriPass||'')+'">••••••</span> <span class="link" onclick="var s=$id(\'suri_p\');s.textContent=s.textContent===\'••••••\'?(s.dataset.v||\'—\'):\'••••••\'">ver</span></div>':'')
-    +((c.regComNum||c.regComVence)?'<div class="tiny" style="margin-top:4px">🪪 Registro de Comerciante: <b>'+esc(c.regComNum||'—')+'</b>'+(c.regComVence?' · vence <b style="color:'+(diffDias(c.regComVence,hoyISO())<=60?'var(--coral)':'inherit')+'">'+fmtF(c.regComVence)+'</b>':' · <span style="color:var(--gold)">falta la fecha de vencimiento</span>')+'</div>':'')
+    +(Object.keys(c.renovaciones||{}).length?'<div class="tiny" style="margin-top:4px">🪪 '+Object.entries(c.renovaciones).map(([nom,d])=>{
+        const cerca=d.vence&&diffDias(d.vence,hoyISO())<=60;
+        return esc(nom)+': <b>'+esc(d.num||'—')+'</b>'+(d.vence?' vence <b style="color:'+(cerca?'var(--coral)':'inherit')+'">'+fmtF(d.vence)+'</b>':' <span style="color:var(--gold)">(falta fecha)</span>');
+      }).join(' · ')+'</div>':'')
     +(c.notas?'<div class="tiny" style="margin-top:4px">📝 '+esc(c.notas)+'</div>':'')+'</div>'
     +'<div class="row">'
     +(c.tel?'<a class="btn sm wa" target="_blank" rel="noopener" href="'+waDocs(c.id)+'">📲 Pedir documentos</a>':'')
@@ -1544,9 +1575,20 @@ function modalCli(id){
     +'</div><div class="frow">'
     +'<div class="fld"><label>Usuario de SURI del cliente</label><input id="cl_suri_u" value="'+(c?esc(c.suriUsuario||''):'')+'" autocomplete="off"></div>'
     +'<div class="fld"><label>Contraseña de SURI</label><input id="cl_suri_p" value="'+(c?esc(c.suriPass||''):'')+'" autocomplete="off"><div class="note">Parte del expediente del cliente — visible para el equipo de la firma.</div></div>'
-    +'</div><div class="frow">'
-    +'<div class="fld"><label>Registro de Comerciante (número)</label><input id="cl_reg_n" value="'+(c?esc(c.regComNum||''):'')+'" placeholder="0000000-0000"></div>'
-    +'<div class="fld"><label>Vence el Registro de Comerciante</label><input type="date" id="cl_reg_v" value="'+(c?esc(c.regComVence||''):'')+'"><div class="note">Usualmente cada 2 años. Con la fecha puesta, Hoy avisa 60 días antes.</div></div>'
+    +'</div>'
+    +'<div class="fld"><label>Renovaciones y permisos — marca lo que le aplica</label>'
+    +'<div style="border:1.5px solid var(--line-d);border-radius:8px;padding:10px">'
+    +(state.config.renovables||renovablesDefault()).map((nom,ix)=>{
+      const d=(c&&c.renovaciones&&c.renovaciones[nom])||null;
+      return '<div class="chkline"><input type="checkbox" id="rv_chk_'+ix+'" '+(d?'checked':'')
+        +' onchange="$id(\'rv_row_'+ix+'\').style.display=this.checked?\'\':\'none\'"> <b>'+esc(nom)+'</b></div>'
+        +'<div id="rv_row_'+ix+'" class="frow" style="display:'+(d?'':'none')+';margin:0 0 10px 25px">'
+        +'<div class="fld" style="margin-bottom:4px"><label>Número</label><input id="rv_num_'+ix+'" value="'+esc((d&&d.num)||'')+'"></div>'
+        +'<div class="fld" style="margin-bottom:4px"><label>Vence</label><input type="date" id="rv_ven_'+ix+'" value="'+esc((d&&d.vence)||'')+'"></div>'
+        +'</div>';
+    }).join('')
+    +'</div><div class="note">Con la fecha puesta, Hoy avisa 60 días antes de cada renovación. La lista de permisos se edita en Config.</div></div>'
+    +'<div class="frow">'
     +'</div>'
     +'<div class="fld"><label>Perfil contributivo — determina qué se le genera automáticamente</label>'
     +'<div style="max-height:230px;overflow-y:auto;border:1.5px solid var(--line-d);border-radius:8px;padding:10px">'
@@ -1576,8 +1618,13 @@ function guardarCli(id){
     tributacion:$id('cl_trib')?$id('cl_trib').value:'corp',
     honorario:Number($id('cl_hon').value)||0,contacto:$id('cl_cont').value.trim(),tel:$id('cl_tel').value.trim(),
     email:$id('cl_email').value.trim(),perfil,estado:$id('cl_estado').value,notas:$id('cl_notas').value.trim(),
-    suriUsuario:$id('cl_suri_u').value.trim(),suriPass:$id('cl_suri_p').value,
-    regComNum:$id('cl_reg_n').value.trim(),regComVence:$id('cl_reg_v').value};
+    suriUsuario:$id('cl_suri_u').value.trim(),suriPass:$id('cl_suri_p').value};
+  const renov={};
+  (state.config.renovables||renovablesDefault()).forEach((nom,ix)=>{
+    const chk=$id('rv_chk_'+ix);
+    if(chk&&chk.checked) renov[nom]={num:$id('rv_num_'+ix).value.trim(),vence:$id('rv_ven_'+ix).value};
+  });
+  datos.renovaciones=renov;
   if(id){
     Object.assign(getCli(id),datos);
     /* si la LLC cambió de elección, la planilla del tipo que ya no aplica se marca N/A */
@@ -2118,6 +2165,10 @@ function renderConfig(){
     h+='<div class="fld"><label>'+esc(t)+'</label><textarea id="cf_pl_'+ix+'" style="min-height:74px;font-size:12.5px">'+esc(((c.plantillasDocs||{})[t]||[]).join('\n'))+'</textarea></div>';
   });
   h+='</div><button class="btn sm" onclick="guardarPlantillas()">Guardar plantillas</button></div>';
+  h+='<div class="card"><h2>Renovaciones y permisos</h2>'
+    +'<p class="tiny" style="margin-bottom:10px">Los permisos y certificados que tu firma renueva por sus clientes (una línea por permiso). En cada cliente marcas cuáles le aplican, con su número y fecha — y Hoy avisa 60 días antes.</p>'
+    +'<div class="fld"><textarea id="cf_renov" style="min-height:110px;font-size:12.5px">'+esc((c.renovables||renovablesDefault()).join('\n'))+'</textarea></div>'
+    +'<button class="btn sm" onclick="guardarRenovables()">Guardar</button></div>';
   h+='<div class="card"><h2>Respaldo</h2><div class="row">'
     +'<button class="btn sm sec" onclick="exportarJSON()">⬇️ Exportar todo</button>'
     +'<label class="btn sm ghost" style="cursor:pointer">⬆️ Importar<input type="file" accept=".json" style="display:none" onchange="importarJSON(this)"></label>'
@@ -2162,6 +2213,12 @@ function guardarObl(id){
   o.alias=$id('ob_alias').value.trim();
   o.dia=Number($id('ob_dia').value)||o.dia; o.nota=$id('ob_nota').value.trim();
   saveState(); closeModal(); renderAll(); toast('Obligación actualizada');
+}
+function guardarRenovables(){
+  const lista=$id('cf_renov').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!lista.length){ toast('Deja al menos un permiso en la lista', true); return; }
+  state.config.renovables=lista;
+  saveState(); toast('Lista de renovaciones guardada');
 }
 function guardarPlantillas(){
   const pl={};
