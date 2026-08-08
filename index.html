@@ -536,9 +536,10 @@ async function cargarFirma(ses){
   const {data:f,error:e2}=await sb.from('firmas').select('*').eq('id',m.firma_id).single();
   if(e2||!f){ mostrarLoginNube('No se pudo cargar la información de la firma.'); return; }
   nube.firmaId=f.id; nube.rol=m.rol; nube.quien=m.nombre||email.split('@')[0];
-  state=f.data||estadoVacio(f.nombre);
+  const datosOk=f.data&&f.data.clientes;   /* un data vacío o a medias cuenta como primera vez */
+  state=datosOk?f.data:estadoVacio(f.nombre);
   migrar();
-  if(!f.data) await subirNube();      /* primera vez: siembra el estado inicial */
+  if(!datosOk) await subirNube();      /* primera vez: siembra el estado inicial */
   storageSet(JSON.stringify(state));  /* copia local de respaldo */
   session.role= m.rol==='socio'?'admin':'staff';
   $id('loginScreen').style.display='none'; $id('app').style.display='block';
